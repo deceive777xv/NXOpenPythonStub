@@ -1,2 +1,35 @@
 # NXOpenPythonStub
-NXOpen Python API Stub
+
+Cleaned NXOpen Python API stubs for Pylance.
+
+## Contents
+
+- `NXOpen/`
+- `NXOpenUI/`
+- `scripts/clean_nxopen_stubs.py`
+- `NXOpen_stub_cleanup.md`
+
+## Purpose
+
+These stubs are cleaned from generated NXOpen API output so they are easier for Pylance to consume.
+
+The cleanup focuses on:
+
+- invalid identifiers and generated syntax artifacts
+- broken annotation forms such as `any` or `Tag[]`
+- static method inference for APIs like `Session.GetSession()`
+- converting annotated members to property form for more stable chained type inference
+
+## Pylance
+
+Point `python.analysis.stubPath` to the directory that contains `NXOpen/` and `NXOpenUI/`.
+
+## Regeneration
+
+If you regenerate the raw NXOpen files, rerun:
+
+```powershell
+python scripts/clean_nxopen_stubs.py <raw_stub_root> <clean_output_root>
+```
+
+More detail is in [NXOpen_stub_cleanup.md](NXOpen_stub_cleanup.md).
