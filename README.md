@@ -20,6 +20,14 @@ The cleanup focuses on:
 - static method inference for APIs like `Session.GetSession()`
 - converting annotated members to property form for more stable chained type inference
 
+## Acknowledgements
+
+Thanks to the original stub provider, [theScriptingEngineer / Frederik Vanhee](https://community.sw.siemens.com/s/profile/0054O00000ANP82QAH), for publishing the original NXOpen Python Intellisense stubs and usage notes in the Siemens Community post:
+
+- [NXOpen intellisense for Python in Visual Studio Code](https://community.sw.siemens.com/s/feed/0D54O00007oICmdSAG)
+
+This repository publishes a cleaned and Pylance-friendly derivative of that stub set.
+
 ## Pylance
 
 Point `python.analysis.stubPath` to the directory that contains `NXOpen/` and `NXOpenUI/`.
