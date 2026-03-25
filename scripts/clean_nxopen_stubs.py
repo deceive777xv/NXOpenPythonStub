@@ -594,6 +594,65 @@ def ensure_typing_import(lines: list[str]) -> list[str]:
     return lines[:insert_at] + ["import typing\n"] + lines[insert_at:]
 
 
+def ensure_nxopen_root_shims(lines: list[str], source_path: Path) -> list[str]:
+    if source_path.name != "__init__.py" or source_path.parent.name != "NXOpen":
+        return lines
+
+    required_imports = ("BlockStyler", "StructureDesign")
+    existing_imports = {
+        line.removeprefix("from . import ").strip()
+        for line in lines
+        if line.startswith("from . import ")
+    }
+
+    insert_at = 0
+    while insert_at < len(lines) and lines[insert_at].startswith(("from __future__ import", "from . import ")):
+        insert_at += 1
+
+    missing_imports = [f"from . import {name}\n" for name in required_imports if name not in existing_imports]
+    if missing_imports:
+        lines = lines[:insert_at] + missing_imports + lines[insert_at:]
+
+    shim_names = (
+        "System",
+        "IFitTo",
+        "ISurface",
+        "IReferenceAxis",
+        "IPlaneForXformByThreePlanes",
+    )
+    if any(line.startswith(f"class {name}") for name in shim_names for line in lines):
+        missing_shims = [name for name in shim_names if not any(line.startswith(f"class {name}") for line in lines)]
+    else:
+        missing_shims = list(shim_names)
+
+    if not missing_shims:
+        return lines
+
+    import_index = next((index for index, line in enumerate(lines) if line.startswith("import enum")), None)
+    if import_index is None:
+        import_index = next((index for index, line in enumerate(lines) if line.startswith("import typing")), None)
+    insert_after = import_index + 1 if import_index is not None else insert_at
+
+    shim_block: list[str] = []
+    if "System" in missing_shims:
+        shim_block.extend([
+            "\n",
+            "class System:\n",
+            "    class Object:\n",
+            "        ...\n",
+        ])
+
+    protocol_shims = [name for name in missing_shims if name != "System"]
+    for name in protocol_shims:
+        shim_block.extend([
+            "\n",
+            f"class {name}(typing.Protocol):\n",
+            "    ...\n",
+        ])
+
+    return lines[:insert_after] + shim_block + lines[insert_after:]
+
+
 def clean_file(source_text: str, source_path: Path) -> tuple[str, FileStats]:
     stats = FileStats()
     lines = source_text.splitlines(keepends=True)
@@ -632,6 +691,7 @@ def clean_file(source_text: str, source_path: Path) -> tuple[str, FileStats]:
     cleaned = promote_annotated_members_to_properties(cleaned, stats)
     cleaned = add_empty_class_bodies(cleaned)
     cleaned = ensure_typing_import(cleaned)
+    cleaned = ensure_nxopen_root_shims(cleaned, source_path)
     return "".join(cleaned), stats
 
 

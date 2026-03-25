@@ -60,6 +60,7 @@ from . import Positioning
 from . import CADCAEPrep
 from . import ModlUtils
 from . import GeometricUtilities
+from . import BlockStyler
 from . import VisualReporting
 from . import VectorArithmetic
 from . import CAM
@@ -84,9 +85,31 @@ from . import Mfg
 from . import PLAS
 from . import Schematic
 from . import SheetMetal
+from . import StructureDesign
 
 import typing
 import enum
+
+class System:
+    class Object:
+        ...
+
+
+class IFitTo(typing.Protocol):
+    ...
+
+
+class ISurface(typing.Protocol):
+    ...
+
+
+class IReferenceAxis(typing.Protocol):
+    ...
+
+
+class IPlaneForXformByThreePlanes(typing.Protocol):
+    ...
+
 
 class XYZAxis(enum.Enum):
     XAxis= 0
