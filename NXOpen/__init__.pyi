@@ -1,5 +1,6 @@
 from __future__ import annotations
 from . import CLDKin
+from . import BodyDes
 from . import Drafting
 from . import PartFamily
 from . import MendixReporting
