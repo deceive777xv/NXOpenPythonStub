@@ -194,6 +194,51 @@ def first_parameter_name(parameter_text: str) -> str | None:
     return match.group(1)
 
 
+def split_parameter_names(parameter_text: str) -> list[str]:
+    names: list[str] = []
+    for part in split_top_level(parameter_text):
+        stripped = part.strip()
+        if not stripped or stripped in {"/", "*"}:
+            continue
+        match = re.match(r"^\*{0,2}([A-Za-z_][A-Za-z0-9_]*)", stripped)
+        if match:
+            names.append(match.group(1))
+    return names
+
+
+def parse_single_line_def(line: str) -> tuple[str, str, str, str | None] | None:
+    match = DEF_START_PATTERN.match(line)
+    if not match:
+        return None
+
+    indent = match.group(1)
+    name = match.group(2)
+    open_paren = line.find("(", match.end(2) - 1)
+    close_paren = line.rfind(")")
+    if open_paren == -1 or close_paren == -1 or close_paren < open_paren:
+        return None
+
+    parameter_text = line[open_paren + 1 : close_paren]
+    tail = line[close_paren + 1 :].strip()
+    return_annotation: str | None = None
+    if tail.startswith("->"):
+        return_annotation = tail[2:].split(":", 1)[0].strip()
+
+    return indent, name, parameter_text, return_annotation
+
+
+def is_singleton_static_getter(current_class: str | None, name: str, parameter_text: str, return_annotation: str | None) -> bool:
+    if not current_class or not return_annotation:
+        return False
+
+    parameter_names = split_parameter_names(parameter_text)
+    if parameter_names != ["self"]:
+        return False
+
+    normalized_return = return_annotation.strip().strip('"')
+    return name == f"Get{current_class}" and normalized_return == current_class
+
+
 def signature_complete(text: str) -> bool:
     paren_depth = 0
     bracket_depth = 0
@@ -404,26 +449,46 @@ def add_overload_decorators(lines: list[str], stats: FileStats) -> list[str]:
 
 def add_staticmethod_decorators(lines: list[str], stats: FileStats) -> list[str]:
     decorated: list[str] = []
+    class_stack: list[tuple[int, str]] = []
 
     for line in lines:
-        match = DEF_START_PATTERN.match(line)
-        if not match:
+        class_match = CLASS_PATTERN.match(line.rstrip("\r\n"))
+        if class_match:
+            class_indent = indentation_width(line)
+            while class_stack and class_indent <= class_stack[-1][0]:
+                class_stack.pop()
+            class_stack.append((class_indent, class_match.group(2)))
             decorated.append(line)
             continue
 
-        indent = match.group(1)
+        if class_stack and line.strip():
+            current_indent = indentation_width(line)
+            while class_stack and current_indent <= class_stack[-1][0]:
+                class_stack.pop()
+
+        parsed = parse_single_line_def(line)
+        if not parsed:
+            decorated.append(line)
+            continue
+
+        indent, name, parameter_text, return_annotation = parsed
         if not indent:
             decorated.append(line)
             continue
 
-        open_paren = line.find("(")
-        close_paren = line.rfind(")")
-        if open_paren == -1 or close_paren == -1 or close_paren < open_paren:
+        if decorated and decorated[-1].strip() == "@staticmethod":
             decorated.append(line)
             continue
 
-        parameter_text = line[open_paren + 1 : close_paren]
         first_param = first_parameter_name(parameter_text)
+        current_class = class_stack[-1][1] if class_stack else None
+        if is_singleton_static_getter(current_class, name, parameter_text, return_annotation):
+            decorated.append(f"{indent}@staticmethod\n")
+            rewritten_line = line.replace("(self)", "()", 1)
+            decorated.append(rewritten_line)
+            stats.staticmethods_added += 1
+            continue
+
         if first_param not in {"self", "cls"}:
             decorated.append(f"{indent}@staticmethod\n")
             stats.staticmethods_added += 1
