@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import keyword
 import re
+import typing
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -414,35 +415,106 @@ def sanitize_simple_target_line(line: str) -> tuple[str, int, int]:
 
 
 def add_overload_decorators(lines: list[str], stats: FileStats) -> list[str]:
-    decorated: list[str] = []
+    segments: list[tuple[str, object]] = []
+    class_stack: list[tuple[int, str]] = []
     index = 0
 
     while index < len(lines):
-        match = DEF_START_PATTERN.match(lines[index])
-        if not match:
-            decorated.append(lines[index])
+        line = lines[index]
+        class_match = CLASS_PATTERN.match(line.rstrip("\r\n"))
+        if class_match:
+            class_indent = indentation_width(line)
+            while class_stack and class_indent <= class_stack[-1][0]:
+                class_stack.pop()
+
+            current_class = class_match.group(2)
+            qualified_class = current_class if not class_stack else f"{class_stack[-1][1]}.{current_class}"
+            class_stack.append((class_indent, qualified_class))
+            segments.append(("raw", [line]))
             index += 1
             continue
 
-        indent = match.group(1)
-        name = match.group(2)
-        run_end = index + 1
-        while run_end < len(lines):
-            other = DEF_START_PATTERN.match(lines[run_end])
-            if not other or other.group(1) != indent or other.group(2) != name:
-                break
-            run_end += 1
+        if class_stack and line.strip():
+            current_indent = indentation_width(line)
+            while class_stack and current_indent <= class_stack[-1][0]:
+                class_stack.pop()
 
-        if run_end - index > 1:
-            for def_index in range(index, run_end):
-                decorated.append(f"{indent}@typing.overload\n")
-                decorated.append(lines[def_index])
-                stats.overloads_added += 1
-            index = run_end
+        decorator_lines: list[str] = []
+        start_index = index
+        while index < len(lines) and lines[index].lstrip().startswith("@"):
+            decorator_lines.append(lines[index])
+            index += 1
+
+        if index < len(lines):
+            def_match = DEF_START_PATTERN.match(lines[index])
+            if def_match:
+                current_scope = class_stack[-1][1] if class_stack else "<module>"
+                segments.append(
+                    (
+                        "def",
+                        {
+                            "scope": current_scope,
+                            "indent": def_match.group(1),
+                            "name": def_match.group(2),
+                            "decorators": decorator_lines,
+                            "line": lines[index],
+                        },
+                    )
+                )
+                index += 1
+                continue
+
+        if decorator_lines:
+            segments.append(("raw", decorator_lines))
+            if index == start_index:
+                index += 1
             continue
 
-        decorated.append(lines[index])
+        segments.append(("raw", [line]))
         index += 1
+
+    grouped_indices: dict[tuple[str, str, str], list[int]] = {}
+    for segment_index, (segment_kind, payload) in enumerate(segments):
+        if segment_kind != "def":
+            continue
+
+        method = typing.cast(dict[str, object], payload)
+        decorators = [typing.cast(str, entry).strip() for entry in typing.cast(list[str], method["decorators"])]
+        if any(
+            decorator == "@property" or decorator.endswith(".setter") or decorator.endswith(".deleter")
+            for decorator in decorators
+        ):
+            continue
+
+        key = (
+            typing.cast(str, method["scope"]),
+            typing.cast(str, method["indent"]),
+            typing.cast(str, method["name"]),
+        )
+        grouped_indices.setdefault(key, []).append(segment_index)
+
+    for indices in grouped_indices.values():
+        if len(indices) < 2:
+            continue
+
+        for segment_index in indices:
+            method = typing.cast(dict[str, object], segments[segment_index][1])
+            decorators = typing.cast(list[str], method["decorators"])
+            if any(decorator.strip() == "@typing.overload" for decorator in decorators):
+                continue
+
+            decorators.append(f"{typing.cast(str, method['indent'])}@typing.overload\n")
+            stats.overloads_added += 1
+
+    decorated: list[str] = []
+    for segment_kind, payload in segments:
+        if segment_kind == "raw":
+            decorated.extend(typing.cast(list[str], payload))
+            continue
+
+        method = typing.cast(dict[str, object], payload)
+        decorated.extend(typing.cast(list[str], method["decorators"]))
+        decorated.append(typing.cast(str, method["line"]))
 
     return decorated
 
