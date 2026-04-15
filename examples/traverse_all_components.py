@@ -26,16 +26,18 @@ def main() -> None:
 
     work_part = session.Parts.Work
     if work_part is None:
-        listing_window.WriteLine("当前没有打开的 Work Part。")
+        listing_window.WriteLine("No Work Part is currently open.")
         return
 
     root_component = work_part.ComponentAssembly.RootComponent
     if root_component is None:
-        listing_window.WriteLine(f"'{work_part.Leaf}' 不是装配，或没有根组件。")
+        listing_window.WriteLine(
+            f"Part '{work_part.Leaf}' is not an assembly or has no root component."
+        )
         return
 
     listing_window.WriteLine(f"Work Part: {work_part.Leaf}")
-    listing_window.WriteLine("开始遍历所有 component...")
+    listing_window.WriteLine("Traversing all components...")
 
     components = _walk_components(root_component)
     for level, component in components:
@@ -46,7 +48,7 @@ def main() -> None:
             f"OwningPart={_part_name(component.OwningPart)}"
         )
 
-    listing_window.WriteLine(f"component 总数: {len(components)}")
+    listing_window.WriteLine(f"Total components: {len(components)}")
 
 
 def get_unload_option(_: str) -> NXOpen.Session.LibraryUnloadOption:
