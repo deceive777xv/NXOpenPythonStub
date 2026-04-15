@@ -1,10 +1,10 @@
-from __future__ import annotations
+from typing import List, Optional, Tuple
 
 import NXOpen
 import NXOpen.Assemblies
 
 
-def _part_name(part: NXOpen.BasePart | None) -> str:
+def _part_name(part: Optional[NXOpen.BasePart]) -> str:
     if part is None:
         return "<unknown part>"
     return part.Leaf
@@ -12,8 +12,8 @@ def _part_name(part: NXOpen.BasePart | None) -> str:
 
 def _walk_components(
     component: NXOpen.Assemblies.Component, level: int = 0
-) -> list[tuple[int, NXOpen.Assemblies.Component]]:
-    items: list[tuple[int, NXOpen.Assemblies.Component]] = [(level, component)]
+) -> List[Tuple[int, NXOpen.Assemblies.Component]]:
+    items: List[Tuple[int, NXOpen.Assemblies.Component]] = [(level, component)]
     for child in component.GetChildren():
         items.extend(_walk_components(child, level + 1))
     return items
