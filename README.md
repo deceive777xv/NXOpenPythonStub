@@ -34,7 +34,7 @@ Point `python.analysis.stubPath` to the directory that contains `NXOpen/` and `N
 
 ## Example
 
-- `/home/runner/work/NXOpenPythonStub/NXOpenPythonStub/examples/traverse_all_components.py`: recursively traverses all assembly components from the work part root component and writes the result to the NX Listing Window.
+- `examples/traverse_all_components.py`: recursively traverses all assembly components from the work part root component and writes the result to the NX Listing Window.
 
 ## Regeneration
 
