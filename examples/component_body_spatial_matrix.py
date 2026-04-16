@@ -1,11 +1,12 @@
 from dataclasses import dataclass
-from typing import Dict, List, Tuple, cast
+from typing import Dict, List, Optional, Tuple, cast
 
 import NXOpen
 import NXOpen.Assemblies
 
 
-GRID_SIZE = (3, 3, 3)
+DEFAULT_GRID_SIZE = (3, 3, 3)
+MAX_GRID_AXIS_CELLS = 8
 MEASURE_ACCURACY = 0.99
 EPSILON = 1.0e-9
 
@@ -203,10 +204,65 @@ def _empty_matrix(
     ]
 
 
+def _component_bbox(
+    body_infos: List[BodyGeometryInfo],
+) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
+    return (
+        (
+            min(info.bbox_min[0] for info in body_infos),
+            min(info.bbox_min[1] for info in body_infos),
+            min(info.bbox_min[2] for info in body_infos),
+        ),
+        (
+            max(info.bbox_max[0] for info in body_infos),
+            max(info.bbox_max[1] for info in body_infos),
+            max(info.bbox_max[2] for info in body_infos),
+        ),
+    )
+
+
+def _auto_grid_size(body_infos: List[BodyGeometryInfo]) -> Tuple[int, int, int]:
+    if not body_infos:
+        return DEFAULT_GRID_SIZE
+
+    component_bbox_min, component_bbox_max = _component_bbox(body_infos)
+    spans = tuple(
+        max(component_bbox_max[index] - component_bbox_min[index], 0.0)
+        for index in range(3)
+    )
+    active_axes = [index for index, span in enumerate(spans) if span >= EPSILON]
+    if not active_axes:
+        return (1, 1, 1)
+
+    body_count = len(body_infos)
+    axis_cap = max(1, min(MAX_GRID_AXIS_CELLS, body_count))
+    max_span = max(spans[index] for index in active_axes)
+    normalized_spans = [1.0, 1.0, 1.0]
+    active_product = 1.0
+    for index in active_axes:
+        normalized_spans[index] = spans[index] / max_span
+        active_product *= normalized_spans[index]
+
+    target_cell_count = min(body_count, axis_cap ** len(active_axes))
+    scale = (float(target_cell_count) / active_product) ** (1.0 / len(active_axes))
+
+    axis_counts = [1, 1, 1]
+    for index in active_axes:
+        axis_counts[index] = max(
+            1, min(axis_cap, int(normalized_spans[index] * scale))
+        )
+
+    if body_count > 1 and all(axis_counts[index] == 1 for index in active_axes):
+        dominant_axis = max(active_axes, key=lambda index: spans[index])
+        axis_counts[dominant_axis] = min(axis_cap, 2)
+
+    return cast(Tuple[int, int, int], tuple(axis_counts))
+
+
 def analyze_component_bodies(
     session: NXOpen.Session,
     component: NXOpen.Assemblies.Component,
-    grid_size: Tuple[int, int, int] = GRID_SIZE,
+    grid_size: Optional[Tuple[int, int, int]] = None,
 ) -> ComponentBodyAnalysis:
     prototype_part = _component_prototype_part(component)
     prototype_bodies = prototype_part.Bodies.ToArray()
@@ -218,37 +274,44 @@ def analyze_component_bodies(
     ]
 
     if not body_infos:
+        resolved_grid_size = grid_size or DEFAULT_GRID_SIZE
         return ComponentBodyAnalysis(
             component_name=component.DisplayName,
             component_journal_identifier=component.JournalIdentifier,
             prototype_part_name=prototype_part.Leaf,
             component_bbox_min=(0.0, 0.0, 0.0),
             component_bbox_max=(0.0, 0.0, 0.0),
-            matrix=SpatialBodyMatrix(grid_size, _empty_matrix(grid_size)),
+            matrix=SpatialBodyMatrix(
+                resolved_grid_size, _empty_matrix(resolved_grid_size)
+            ),
             bodies=[],
         )
 
-    component_bbox_min = (
-        min(info.bbox_min[0] for info in body_infos),
-        min(info.bbox_min[1] for info in body_infos),
-        min(info.bbox_min[2] for info in body_infos),
-    )
-    component_bbox_max = (
-        max(info.bbox_max[0] for info in body_infos),
-        max(info.bbox_max[1] for info in body_infos),
-        max(info.bbox_max[2] for info in body_infos),
-    )
+    component_bbox_min, component_bbox_max = _component_bbox(body_infos)
+    resolved_grid_size = grid_size or _auto_grid_size(body_infos)
 
-    matrix_cells = _empty_matrix(grid_size)
+    matrix_cells = _empty_matrix(resolved_grid_size)
     for info in body_infos:
         x_range = _axis_cell_range(
-            info.bbox_min[0], info.bbox_max[0], component_bbox_min[0], component_bbox_max[0], grid_size[0]
+            info.bbox_min[0],
+            info.bbox_max[0],
+            component_bbox_min[0],
+            component_bbox_max[0],
+            resolved_grid_size[0],
         )
         y_range = _axis_cell_range(
-            info.bbox_min[1], info.bbox_max[1], component_bbox_min[1], component_bbox_max[1], grid_size[1]
+            info.bbox_min[1],
+            info.bbox_max[1],
+            component_bbox_min[1],
+            component_bbox_max[1],
+            resolved_grid_size[1],
         )
         z_range = _axis_cell_range(
-            info.bbox_min[2], info.bbox_max[2], component_bbox_min[2], component_bbox_max[2], grid_size[2]
+            info.bbox_min[2],
+            info.bbox_max[2],
+            component_bbox_min[2],
+            component_bbox_max[2],
+            resolved_grid_size[2],
         )
 
         info.matrix_range_min = (x_range[0], y_range[0], z_range[0])
@@ -265,14 +328,14 @@ def analyze_component_bodies(
         prototype_part_name=prototype_part.Leaf,
         component_bbox_min=component_bbox_min,
         component_bbox_max=component_bbox_max,
-        matrix=SpatialBodyMatrix(grid_size, matrix_cells),
+        matrix=SpatialBodyMatrix(resolved_grid_size, matrix_cells),
         bodies=body_infos,
     )
 
 
 def build_component_spatial_matrices(
     work_part: NXOpen.Part,
-    grid_size: Tuple[int, int, int] = GRID_SIZE,
+    grid_size: Optional[Tuple[int, int, int]] = None,
 ) -> Dict[str, ComponentBodyAnalysis]:
     root_component = work_part.ComponentAssembly.RootComponent
     if root_component is None:
@@ -316,7 +379,7 @@ def main() -> None:
         )
         return
 
-    analyses = build_component_spatial_matrices(work_part, GRID_SIZE)
+    analyses = build_component_spatial_matrices(work_part)
     listing_window.WriteLine(
         "Generated component body spatial matrices: {0}".format(len(analyses))
     )
@@ -324,10 +387,11 @@ def main() -> None:
     for analysis in analyses.values():
         listing_window.WriteLine("")
         listing_window.WriteLine(
-            "Component: {0} | Prototype: {1} | Bodies: {2}".format(
+            "Component: {0} | Prototype: {1} | Bodies: {2} | Grid: {3}".format(
                 analysis.component_name,
                 analysis.prototype_part_name,
                 len(analysis.bodies),
+                analysis.matrix.shape,
             )
         )
         listing_window.WriteLine(
