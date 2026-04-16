@@ -7,6 +7,7 @@ import NXOpen.Assemblies
 
 DEFAULT_GRID_SIZE = (3, 3, 3)
 MAX_GRID_AXIS_CELLS = 8
+SAMPLE_MATRIX_FALLBACK_INDEX = 1
 MEASURE_ACCURACY = 0.99
 EPSILON = 1.0e-9
 
@@ -243,8 +244,11 @@ def _auto_grid_size(body_infos: List[BodyGeometryInfo]) -> Tuple[int, int, int]:
         normalized_spans[index] = spans[index] / max_span
         active_product *= normalized_spans[index]
 
-    target_cell_count = min(body_count, axis_cap ** len(active_axes))
-    scale = (float(target_cell_count) / active_product) ** (1.0 / len(active_axes))
+    max_cell_count = axis_cap ** len(active_axes)
+    target_cell_count = min(body_count, max_cell_count)
+    scale = (float(target_cell_count) / max(active_product, EPSILON)) ** (
+        1.0 / len(active_axes)
+    )
 
     axis_counts = [1, 1, 1]
     for index in active_axes:
@@ -358,8 +362,8 @@ def _format_vector(values: Tuple[float, float, float]) -> str:
 def _sample_matrix_index(shape: Tuple[int, int, int]) -> Tuple[int, int, int]:
     return (
         0,
-        min(1, shape[1] - 1),
-        min(1, shape[2] - 1),
+        min(SAMPLE_MATRIX_FALLBACK_INDEX, shape[1] - 1),
+        min(SAMPLE_MATRIX_FALLBACK_INDEX, shape[2] - 1),
     )
 
 
