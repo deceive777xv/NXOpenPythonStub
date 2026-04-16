@@ -229,6 +229,11 @@ def _auto_grid_size(body_infos: List[BodyGeometryInfo]) -> Tuple[int, int, int]:
     The component bbox is derived from the body bboxes, normalized by the
     dominant span, then scaled so the resulting grid roughly tracks the number
     of bodies while respecting flat or degenerate geometry.
+
+    Returns:
+        A tuple of ``(x, y, z)`` grid dimensions. Empty input falls back to
+        ``DEFAULT_GRID_SIZE`` and fully degenerate geometry resolves to
+        ``(1, 1, 1)``.
     """
     if not body_infos:
         return DEFAULT_GRID_SIZE
@@ -279,6 +284,10 @@ def analyze_component_bodies(
 
     When ``grid_size`` is ``None``, the matrix shape is derived automatically
     from the collected body data; otherwise the provided grid size is used.
+
+    Returns:
+        ``ComponentBodyAnalysis`` with the component metadata, overall bounding
+        box, resolved spatial matrix, and collected per-body geometry entries.
     """
     prototype_part = _component_prototype_part(component)
     prototype_bodies = prototype_part.Bodies.ToArray()
@@ -357,6 +366,10 @@ def build_component_spatial_matrices(
 
     When ``grid_size`` is ``None``, each component resolves its own automatic
     grid size from its body data; otherwise the supplied override is applied.
+
+    Returns:
+        A dictionary keyed by component journal identifier with the
+        corresponding ``ComponentBodyAnalysis`` results.
     """
     root_component = work_part.ComponentAssembly.RootComponent
     if root_component is None:
