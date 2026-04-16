@@ -91,7 +91,7 @@ def _bbox_units(part: NXOpen.Part) -> List[NXOpen.Unit]:
     return [length_unit]
 
 
-def _normalize_expression_label(expression: NXOpen.Expression) -> str:
+def _extract_normalized_bbox_label(expression: NXOpen.Expression) -> str:
     parts: List[str] = []
     # Different NX versions expose bbox labels through different string fields,
     # so check the common expression metadata members first. Older releases tend
@@ -122,7 +122,9 @@ def _normalize_expression_label(expression: NXOpen.Expression) -> str:
     return "".join(parts).lower().replace("_", "").replace(" ", "")
 
 
-def _expression_point_value(expression: NXOpen.Expression) -> Optional[Tuple[float, float, float]]:
+def _extract_point_from_expression(
+    expression: NXOpen.Expression,
+) -> Optional[Tuple[float, float, float]]:
     for getter_name in ("PointValue", "GetPointValueWithUnits"):
         getter = getattr(expression, getter_name, None)
         if getter is None:
@@ -143,7 +145,7 @@ def _expression_point_value(expression: NXOpen.Expression) -> Optional[Tuple[flo
     return None
 
 
-def _expression_scalar_value(expression: NXOpen.Expression) -> float:
+def _extract_scalar_from_expression(expression: NXOpen.Expression) -> float:
     for getter_name in ("Value", "NumberValue", "GetValueUsingUnits"):
         getter = getattr(expression, getter_name, None)
         if getter is None:
@@ -163,7 +165,7 @@ def _expression_scalar_value(expression: NXOpen.Expression) -> float:
 
     raise ValueError(
         "Unable to resolve numeric value from bbox expression label '{0}'.".format(
-            _normalize_expression_label(expression)
+            _extract_normalized_bbox_label(expression)
         )
     )
 
@@ -184,8 +186,8 @@ def _bbox_from_expressions(
     }
 
     for expression in expressions:
-        label = _normalize_expression_label(expression)
-        point_value = _expression_point_value(expression)
+        label = _extract_normalized_bbox_label(expression)
+        point_value = _extract_point_from_expression(expression)
         if point_value is not None:
             if "min" in label:
                 point_values["min"] = point_value
@@ -195,7 +197,7 @@ def _bbox_from_expressions(
 
         for key, aliases in scalar_aliases.items():
             if key in label or any(alias in label for alias in aliases):
-                scalar_values[key] = _expression_scalar_value(expression)
+                scalar_values[key] = _extract_scalar_from_expression(expression)
                 break
 
     if "min" in point_values and "max" in point_values:
@@ -212,7 +214,7 @@ def _bbox_from_expressions(
         # axis order: minx, miny, minz, maxx, maxy, maxz. This is a final
         # compatibility fallback when no explicit labels were available.
         fallback_values = [
-            _expression_scalar_value(expression)
+            _extract_scalar_from_expression(expression)
             for expression in expressions[:BBOX_EXPRESSION_COUNT]
         ]
         return (
@@ -220,7 +222,7 @@ def _bbox_from_expressions(
             cast(Tuple[float, float, float], tuple(fallback_values[BBOX_MINMAX_AXIS_COUNT:])),
         )
 
-    labels = [_normalize_expression_label(expression) for expression in expressions]
+    labels = [_extract_normalized_bbox_label(expression) for expression in expressions]
     raise ValueError(
         "Unable to extract min/max bbox values from BboxPropertiesElement "
         "({0} expressions, labels={1}).".format(len(expressions), labels)
@@ -384,11 +386,9 @@ def _auto_grid_size(body_infos: List[BodyGeometryInfo]) -> Tuple[int, int, int]:
     max_cell_count = axis_cap ** active_axis_count
     target_cell_count = min(body_count, max_cell_count)
     effective_active_product = max(active_product, EPSILON)
-    # EPSILON prevents divide-by-zero when computing the Nth root used to
-    # distribute cells proportionally across the active axes. active_axis_count
-    # is guaranteed to be non-zero because empty active_axes returns earlier.
-    # Very small products are clamped to EPSILON so flat-but-active geometry
-    # still produces a finite scale.
+    # active_axis_count is guaranteed to be non-zero because empty active_axes
+    # returns earlier. Very small products are clamped to EPSILON so
+    # flat-but-active geometry still produces a finite Nth-root scale.
     scale = (float(target_cell_count) / effective_active_product) ** (
         1.0 / active_axis_count
     )
