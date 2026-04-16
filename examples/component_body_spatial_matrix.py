@@ -292,6 +292,14 @@ def _format_vector(values: Tuple[float, float, float]) -> str:
     return "({0:.3f}, {1:.3f}, {2:.3f})".format(values[0], values[1], values[2])
 
 
+def _sample_matrix_index(shape: Tuple[int, int, int]) -> Tuple[int, int, int]:
+    return (
+        0,
+        min(1, shape[1] - 1),
+        min(1, shape[2] - 1),
+    )
+
+
 def main() -> None:
     session = NXOpen.Session.GetSession()
     listing_window = session.ListingWindow
@@ -347,9 +355,10 @@ def main() -> None:
                 )
             )
 
-        sample_bodies = analysis.matrix[0, 1, 1]
+        sample_index = _sample_matrix_index(analysis.matrix.shape)
+        sample_bodies = analysis.matrix[sample_index]
         listing_window.WriteLine(
-            "  matrix[0, 1, 1] body count: {0}".format(len(sample_bodies))
+            "  matrix{0} body count: {1}".format(sample_index, len(sample_bodies))
         )
         for body_info in sample_bodies:
             listing_window.WriteLine(
