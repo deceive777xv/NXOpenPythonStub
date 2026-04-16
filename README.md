@@ -35,6 +35,7 @@ Point `python.analysis.stubPath` to the directory that contains `NXOpen/` and `N
 ## Examples
 
 - `examples/traverse_all_components.py`: recursively traverses all assembly components from the work part root component and writes the result to the NX Listing Window.
+- `examples/component_body_spatial_matrix.py`: collects per-body area, mass, centroid, bounding-box data for each component and builds a tuple-indexed 3D spatial matrix such as `matrix[0, 1, 1]`.
 
 ## Regeneration
 
