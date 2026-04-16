@@ -389,9 +389,8 @@ def _auto_grid_size(body_infos: List[BodyGeometryInfo]) -> Tuple[int, int, int]:
     # active_axis_count is guaranteed to be non-zero because empty active_axes
     # returns earlier. Very small products are clamped to EPSILON so
     # flat-but-active geometry still produces a finite Nth-root scale.
-    scale = (float(target_cell_count) / effective_active_product) ** (
-        1.0 / active_axis_count
-    )
+    nth_root_exponent = 1.0 / active_axis_count
+    scale = (float(target_cell_count) / effective_active_product) ** nth_root_exponent
 
     axis_counts = [1, 1, 1]
     for index in active_axes:
