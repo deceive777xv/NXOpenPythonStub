@@ -9,6 +9,8 @@ DEFAULT_GRID_SIZE = (3, 3, 3)
 MAX_GRID_AXIS_CELLS = 8
 SAMPLE_MATRIX_FALLBACK_INDEX = 1
 BBOX_ALT_SOLUTION = 0
+BBOX_EXPRESSION_COUNT = 6
+BBOX_MINMAX_AXIS_COUNT = 3
 MEASURE_ACCURACY = 0.99
 EPSILON = 1.0e-9
 
@@ -89,7 +91,7 @@ def _bbox_units(part: NXOpen.Part) -> List[NXOpen.Unit]:
     return [length_unit]
 
 
-def _expression_label(expression: NXOpen.Expression) -> str:
+def _normalize_expression_label(expression: NXOpen.Expression) -> str:
     parts: List[str] = []
     # Different NX versions expose bbox labels through different string fields,
     # so check the common expression metadata members first.
@@ -174,7 +176,7 @@ def _bbox_from_expressions(
     }
 
     for expression in expressions:
-        label = _expression_label(expression)
+        label = _normalize_expression_label(expression)
         point_value = _expression_point_value(expression)
         if point_value is not None:
             if "min" in label:
@@ -197,13 +199,16 @@ def _bbox_from_expressions(
             (scalar_values["maxx"], scalar_values["maxy"], scalar_values["maxz"]),
         )
 
-    if len(expressions) >= 6:
+    if len(expressions) >= BBOX_EXPRESSION_COUNT:
         # BboxPropertiesElement commonly yields six scalar outputs in min/max
         # axis order: minx, miny, minz, maxx, maxy, maxz.
-        fallback_values = [_expression_scalar_value(expression) for expression in expressions[:6]]
+        fallback_values = [
+            _expression_scalar_value(expression)
+            for expression in expressions[:BBOX_EXPRESSION_COUNT]
+        ]
         return (
-            cast(Tuple[float, float, float], tuple(fallback_values[:3])),
-            cast(Tuple[float, float, float], tuple(fallback_values[3:6])),
+            cast(Tuple[float, float, float], tuple(fallback_values[:BBOX_MINMAX_AXIS_COUNT])),
+            cast(Tuple[float, float, float], tuple(fallback_values[BBOX_MINMAX_AXIS_COUNT:])),
         )
 
     raise ValueError("Unable to extract min/max bbox values from BboxPropertiesElement.")
@@ -365,8 +370,8 @@ def _auto_grid_size(body_infos: List[BodyGeometryInfo]) -> Tuple[int, int, int]:
     active_axis_count = len(active_axes)
     max_cell_count = axis_cap ** active_axis_count
     target_cell_count = min(body_count, max_cell_count)
-    # EPSILON prevents divide-by-zero while the reciprocal computes the Nth
-    # root used to distribute cells proportionally across the active axes.
+    # EPSILON prevents divide-by-zero when computing the Nth root used to
+    # distribute cells proportionally across the active axes.
     scale = (float(target_cell_count) / max(active_product, EPSILON)) ** (
         1.0 / active_axis_count
     )
@@ -498,7 +503,7 @@ def _format_vector(values: Tuple[float, float, float]) -> str:
 
 
 def _sample_matrix_index(shape: Tuple[int, int, int]) -> Tuple[int, int, int]:
-    """Return a stable sample cell anchored at the first X slice."""
+    """Return a stable sample cell on the first X slice and a nearby Y/Z cell."""
     return (
         0,
         min(SAMPLE_MATRIX_FALLBACK_INDEX, shape[1] - 1),
