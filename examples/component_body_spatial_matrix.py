@@ -3,14 +3,12 @@ from typing import Dict, List, Optional, Tuple, cast
 
 import NXOpen
 import NXOpen.Assemblies
+import NXOpen.Features
 
 
 DEFAULT_GRID_SIZE = (3, 3, 3)
 MAX_GRID_AXIS_CELLS = 8
 SAMPLE_MATRIX_FALLBACK_INDEX = 1
-BBOX_ALT_SOLUTION = 0
-BBOX_EXPRESSION_COUNT = 6
-BBOX_MINMAX_AXIS_COUNT = 3
 MEASURE_ACCURACY = 0.99
 EPSILON = 1.0e-9
 
@@ -86,65 +84,6 @@ def _collector_for_body(part: NXOpen.Part, body: NXOpen.Body) -> NXOpen.ScCollec
     return collector
 
 
-def _bbox_units(part: NXOpen.Part) -> List[NXOpen.Unit]:
-    length_unit = part.UnitCollection.GetBase("Length")
-    return [length_unit]
-
-
-def _extract_normalized_bbox_label(expression: NXOpen.Expression) -> str:
-    parts: List[str] = []
-    # Different NX versions expose bbox labels through different string fields,
-    # so check the common expression metadata members first. Older releases tend
-    # to populate descriptive properties, while newer ones often surface the
-    # label through expression strings or right-hand-side text.
-    for attr_name in ("Description", "Equation", "ExpressionString", "RightHandSide"):
-        value = getattr(expression, attr_name, "")
-        if value:
-            parts.append(str(value))
-
-    # Some NX versions only expose bbox labels through descriptor/formula
-    # getters, so probe those after the direct string properties above.
-    for getter_name in ("GetDescriptor", "GetFormula"):
-        getter = getattr(expression, getter_name, None)
-        if getter is None:
-            continue
-
-        try:
-            value = getter()
-        except Exception:
-            continue
-
-        if value:
-            parts.append(str(value))
-
-    # Normalize casing and separators so labels like "Min X", "min_x", and
-    # "MinX" can all be matched against the same alias set below.
-    return "".join(parts).lower().replace("_", "").replace(" ", "")
-
-
-def _extract_point_from_expression(
-    expression: NXOpen.Expression,
-) -> Optional[Tuple[float, float, float]]:
-    for getter_name in ("PointValue", "GetPointValueWithUnits"):
-        getter = getattr(expression, getter_name, None)
-        if getter is None:
-            continue
-
-        try:
-            point = (
-                getter(NXOpen.Expression.UnitsOption.Base)
-                if getter_name == "GetPointValueWithUnits"
-                else getter
-            )
-        except Exception:
-            continue
-
-        if hasattr(point, "X") and hasattr(point, "Y") and hasattr(point, "Z"):
-            return (point.X, point.Y, point.Z)
-
-    return None
-
-
 def _extract_scalar_from_expression(expression: NXOpen.Expression) -> float:
     for getter_name in ("Value", "NumberValue", "GetValueUsingUnits"):
         getter = getattr(expression, getter_name, None)
@@ -163,93 +102,39 @@ def _extract_scalar_from_expression(expression: NXOpen.Expression) -> float:
         if isinstance(value, (int, float)):
             return float(value)
 
-    raise ValueError(
-        "Unable to resolve numeric value from bbox expression label '{0}'.".format(
-            _extract_normalized_bbox_label(expression)
-        )
-    )
-
-
-def _bbox_from_expressions(
-    expressions: List[NXOpen.Expression],
-) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
-    """Resolve bbox min/max tuples from BboxPropertiesElement expressions."""
-    point_values: Dict[str, Tuple[float, float, float]] = {}
-    scalar_values: Dict[str, float] = {}
-    scalar_aliases = {
-        "minx": ("xmin", "minimumx"),
-        "miny": ("ymin", "minimumy"),
-        "minz": ("zmin", "minimumz"),
-        "maxx": ("xmax", "maximumx"),
-        "maxy": ("ymax", "maximumy"),
-        "maxz": ("zmax", "maximumz"),
-    }
-
-    for expression in expressions:
-        label = _extract_normalized_bbox_label(expression)
-        point_value = _extract_point_from_expression(expression)
-        if point_value is not None:
-            if "min" in label:
-                point_values["min"] = point_value
-            elif "max" in label:
-                point_values["max"] = point_value
-            continue
-
-        for key, aliases in scalar_aliases.items():
-            if key in label or any(alias in label for alias in aliases):
-                scalar_values[key] = _extract_scalar_from_expression(expression)
-                break
-
-    if "min" in point_values and "max" in point_values:
-        return point_values["min"], point_values["max"]
-
-    if all(key in scalar_values for key in scalar_aliases):
-        return (
-            (scalar_values["minx"], scalar_values["miny"], scalar_values["minz"]),
-            (scalar_values["maxx"], scalar_values["maxy"], scalar_values["maxz"]),
-        )
-
-    if len(expressions) >= BBOX_EXPRESSION_COUNT:
-        # BboxPropertiesElement commonly yields six scalar outputs in min/max
-        # axis order: minx, miny, minz, maxx, maxy, maxz. This is a final
-        # compatibility fallback when no explicit labels were available.
-        fallback_values = [
-            _extract_scalar_from_expression(expression)
-            for expression in expressions[:BBOX_EXPRESSION_COUNT]
-        ]
-        return (
-            cast(Tuple[float, float, float], tuple(fallback_values[:BBOX_MINMAX_AXIS_COUNT])),
-            cast(Tuple[float, float, float], tuple(fallback_values[BBOX_MINMAX_AXIS_COUNT:])),
-        )
-
-    labels = [_extract_normalized_bbox_label(expression) for expression in expressions]
-    raise ValueError(
-        "Unable to extract min/max bbox values from BboxPropertiesElement "
-        "({0} expressions, labels={1}).".format(len(expressions), labels)
-    )
+    raise ValueError("Unable to resolve numeric value from tooling box expression.")
 
 
 def _body_bbox(
     part: NXOpen.Part,
     body: NXOpen.Body,
 ) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
-    """Measure a body's bbox via ``MeasureManager.BboxPropertiesElement``."""
+    """Measure a body's bbox via ``CreateToolingBoxBuilder``."""
     collector = _collector_for_body(part, body)
-    measure_element: Optional[NXOpen.MeasureElement] = None
+    tooling_box_builder: Optional[NXOpen.Features.ToolingBoxBuilder] = None
     try:
-        measure_manager = part.MeasureManager
-        measure_element = measure_manager.BboxPropertiesElement(
-            measure_manager.MasterMeasurement(),
-            _bbox_units(part),
-            collector,
-            BBOX_ALT_SOLUTION,
+        tooling_box_builder = part.Features.ToolingFeatureCollection.CreateToolingBoxBuilder(
+            NXOpen.Features.ToolingBox.Null
         )
-        expressions: List[NXOpen.Expression] = []
-        measure_element.GetMeasureElementExpressions(expressions)
-        return _bbox_from_expressions(expressions)
+        tooling_box_builder.Type = NXOpen.Features.ToolingBoxBuilder.Types.BoundedBlock
+        tooling_box_builder.BoundedObject = collector
+        tooling_box_builder.CalculateBoxSize()
+
+        bbox_min = _point_to_tuple(tooling_box_builder.BoxPosition)
+        bbox_size = (
+            _extract_scalar_from_expression(tooling_box_builder.XValue),
+            _extract_scalar_from_expression(tooling_box_builder.YValue),
+            _extract_scalar_from_expression(tooling_box_builder.ZValue),
+        )
+        bbox_max = (
+            bbox_min[0] + bbox_size[0],
+            bbox_min[1] + bbox_size[1],
+            bbox_min[2] + bbox_size[2],
+        )
+        return bbox_min, bbox_max
     finally:
-        if measure_element is not None:
-            measure_element.FreeResource()
+        if tooling_box_builder is not None:
+            tooling_box_builder.Destroy()
         collector.Destroy()
 
 
