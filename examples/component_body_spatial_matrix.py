@@ -91,6 +91,8 @@ def _bbox_units(part: NXOpen.Part) -> List[NXOpen.Unit]:
 
 def _expression_label(expression: NXOpen.Expression) -> str:
     parts: List[str] = []
+    # Different NX versions expose bbox labels through different string fields,
+    # so check the common expression metadata members first.
     for attr_name in ("Description", "Equation", "ExpressionString", "RightHandSide", "Type"):
         value = getattr(expression, attr_name, "")
         if value:
@@ -109,6 +111,8 @@ def _expression_label(expression: NXOpen.Expression) -> str:
         if value:
             parts.append(str(value))
 
+    # Normalize casing and separators so labels like "Min X", "min_x", and
+    # "MinX" can all be matched against the same alias set below.
     return "".join(parts).lower().replace("_", "").replace(" ", "")
 
 
@@ -194,6 +198,8 @@ def _bbox_from_expressions(
         )
 
     if len(expressions) >= 6:
+        # BboxPropertiesElement commonly yields six scalar outputs in min/max
+        # axis order: minx, miny, minz, maxx, maxy, maxz.
         fallback_values = [_expression_scalar_value(expression) for expression in expressions[:6]]
         return (
             cast(Tuple[float, float, float], tuple(fallback_values[:3])),
@@ -359,8 +365,8 @@ def _auto_grid_size(body_infos: List[BodyGeometryInfo]) -> Tuple[int, int, int]:
     active_axis_count = len(active_axes)
     max_cell_count = axis_cap ** active_axis_count
     target_cell_count = min(body_count, max_cell_count)
-    # EPSILON prevents divide-by-zero while the reciprocal computes the
-    # active-axis root used to spread cells across the component aspect ratio.
+    # EPSILON prevents divide-by-zero while the reciprocal computes the Nth
+    # root used to distribute cells proportionally across the active axes.
     scale = (float(target_cell_count) / max(active_product, EPSILON)) ** (
         1.0 / active_axis_count
     )
