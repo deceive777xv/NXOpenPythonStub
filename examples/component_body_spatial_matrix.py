@@ -167,12 +167,12 @@ def _bbox_from_expressions(
     point_values: Dict[str, Tuple[float, float, float]] = {}
     scalar_values: Dict[str, float] = {}
     scalar_aliases = {
-        "minx": ("minx", "xmin", "minimumx"),
-        "miny": ("miny", "ymin", "minimumy"),
-        "minz": ("minz", "zmin", "minimumz"),
-        "maxx": ("maxx", "xmax", "maximumx"),
-        "maxy": ("maxy", "ymax", "maximumy"),
-        "maxz": ("maxz", "zmax", "maximumz"),
+        "minx": ("xmin", "minimumx"),
+        "miny": ("ymin", "minimumy"),
+        "minz": ("zmin", "minimumz"),
+        "maxx": ("xmax", "maximumx"),
+        "maxy": ("ymax", "maximumy"),
+        "maxz": ("zmax", "maximumz"),
     }
 
     for expression in expressions:
@@ -186,7 +186,7 @@ def _bbox_from_expressions(
             continue
 
         for key, aliases in scalar_aliases.items():
-            if any(alias in label for alias in aliases):
+            if key in label or any(alias in label for alias in aliases):
                 scalar_values[key] = _expression_scalar_value(expression)
                 break
 
@@ -371,10 +371,13 @@ def _auto_grid_size(body_infos: List[BodyGeometryInfo]) -> Tuple[int, int, int]:
     active_axis_count = len(active_axes)
     max_cell_count = axis_cap ** active_axis_count
     target_cell_count = min(body_count, max_cell_count)
+    effective_active_product = max(active_product, EPSILON)
     # EPSILON prevents divide-by-zero when computing the Nth root used to
     # distribute cells proportionally across the active axes. active_axis_count
     # is guaranteed to be non-zero because empty active_axes returns earlier.
-    scale = (float(target_cell_count) / max(active_product, EPSILON)) ** (
+    # Very small products are clamped to EPSILON so flat-but-active geometry
+    # still produces a finite scale.
+    scale = (float(target_cell_count) / effective_active_product) ** (
         1.0 / active_axis_count
     )
 
