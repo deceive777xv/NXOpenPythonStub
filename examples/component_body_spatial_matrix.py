@@ -94,12 +94,16 @@ def _bbox_units(part: NXOpen.Part) -> List[NXOpen.Unit]:
 def _normalize_expression_label(expression: NXOpen.Expression) -> str:
     parts: List[str] = []
     # Different NX versions expose bbox labels through different string fields,
-    # so check the common expression metadata members first.
+    # so check the common expression metadata members first. Older releases tend
+    # to populate descriptive properties, while newer ones often surface the
+    # label through expression strings or right-hand-side text.
     for attr_name in ("Description", "Equation", "ExpressionString", "RightHandSide"):
         value = getattr(expression, attr_name, "")
         if value:
             parts.append(str(value))
 
+    # Some NX versions only expose bbox labels through descriptor/formula
+    # getters, so probe those after the direct string properties above.
     for getter_name in ("GetDescriptor", "GetFormula"):
         getter = getattr(expression, getter_name, None)
         if getter is None:
@@ -157,7 +161,11 @@ def _expression_scalar_value(expression: NXOpen.Expression) -> float:
         if isinstance(value, (int, float)):
             return float(value)
 
-    raise ValueError("Unable to resolve numeric value from bbox expression.")
+    raise ValueError(
+        "Unable to resolve numeric value from bbox expression label '{0}'.".format(
+            _normalize_expression_label(expression)
+        )
+    )
 
 
 def _bbox_from_expressions(
@@ -212,7 +220,11 @@ def _bbox_from_expressions(
             cast(Tuple[float, float, float], tuple(fallback_values[BBOX_MINMAX_AXIS_COUNT:])),
         )
 
-    raise ValueError("Unable to extract min/max bbox values from BboxPropertiesElement.")
+    labels = [_normalize_expression_label(expression) for expression in expressions]
+    raise ValueError(
+        "Unable to extract min/max bbox values from BboxPropertiesElement "
+        "({0} expressions, labels={1}).".format(len(expressions), labels)
+    )
 
 
 def _body_bbox(
