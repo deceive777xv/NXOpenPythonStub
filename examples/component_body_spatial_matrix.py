@@ -256,8 +256,10 @@ def _auto_grid_size(body_infos: List[BodyGeometryInfo]) -> Tuple[int, int, int]:
         normalized_spans[index] = spans[index] / max_span
         active_product *= normalized_spans[index]
 
+    # active_axes is bounded by the three model-space axes.
     max_cell_count = axis_cap ** len(active_axes)
     target_cell_count = min(body_count, max_cell_count)
+    # EPSILON prevents divide-by-zero when the normalized span product is tiny.
     scale = (float(target_cell_count) / max(active_product, EPSILON)) ** (
         1.0 / len(active_axes)
     )
