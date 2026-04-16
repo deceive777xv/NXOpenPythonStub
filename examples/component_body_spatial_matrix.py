@@ -95,7 +95,7 @@ def _normalize_expression_label(expression: NXOpen.Expression) -> str:
     parts: List[str] = []
     # Different NX versions expose bbox labels through different string fields,
     # so check the common expression metadata members first.
-    for attr_name in ("Description", "Equation", "ExpressionString", "RightHandSide", "Type"):
+    for attr_name in ("Description", "Equation", "ExpressionString", "RightHandSide"):
         value = getattr(expression, attr_name, "")
         if value:
             parts.append(str(value))
@@ -201,7 +201,8 @@ def _bbox_from_expressions(
 
     if len(expressions) >= BBOX_EXPRESSION_COUNT:
         # BboxPropertiesElement commonly yields six scalar outputs in min/max
-        # axis order: minx, miny, minz, maxx, maxy, maxz.
+        # axis order: minx, miny, minz, maxx, maxy, maxz. This is a final
+        # compatibility fallback when no explicit labels were available.
         fallback_values = [
             _expression_scalar_value(expression)
             for expression in expressions[:BBOX_EXPRESSION_COUNT]
@@ -371,7 +372,8 @@ def _auto_grid_size(body_infos: List[BodyGeometryInfo]) -> Tuple[int, int, int]:
     max_cell_count = axis_cap ** active_axis_count
     target_cell_count = min(body_count, max_cell_count)
     # EPSILON prevents divide-by-zero when computing the Nth root used to
-    # distribute cells proportionally across the active axes.
+    # distribute cells proportionally across the active axes. active_axis_count
+    # is guaranteed to be non-zero because empty active_axes returns earlier.
     scale = (float(target_cell_count) / max(active_product, EPSILON)) ** (
         1.0 / active_axis_count
     )
