@@ -111,20 +111,20 @@ def _body_bbox(
 ) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
     """Measure a body's bbox via ``CreateToolingBoxBuilder``."""
     collector = _collector_for_body(part, body)
-    tooling_box_builder: Optional[NXOpen.Features.ToolingBoxBuilder] = None
+    builder: Optional[NXOpen.Features.ToolingBoxBuilder] = None
     try:
-        tooling_box_builder = part.Features.ToolingFeatureCollection.CreateToolingBoxBuilder(
+        builder = part.Features.ToolingFeatureCollection.CreateToolingBoxBuilder(
             NXOpen.Features.ToolingBox.Null
         )
-        tooling_box_builder.Type = NXOpen.Features.ToolingBoxBuilder.Types.BoundedBlock
-        tooling_box_builder.BoundedObject = collector
-        tooling_box_builder.CalculateBoxSize()
+        builder.Type = NXOpen.Features.ToolingBoxBuilder.Types.BoundedBlock
+        builder.BoundedObject = collector
+        builder.CalculateBoxSize()
 
-        bbox_min = _point_to_tuple(tooling_box_builder.BoxPosition)
+        bbox_min = _point_to_tuple(builder.BoxPosition)
         bbox_size = (
-            _extract_scalar_from_expression(tooling_box_builder.XValue),
-            _extract_scalar_from_expression(tooling_box_builder.YValue),
-            _extract_scalar_from_expression(tooling_box_builder.ZValue),
+            _extract_scalar_from_expression(builder.XValue),
+            _extract_scalar_from_expression(builder.YValue),
+            _extract_scalar_from_expression(builder.ZValue),
         )
         bbox_max = (
             bbox_min[0] + bbox_size[0],
@@ -133,8 +133,8 @@ def _body_bbox(
         )
         return bbox_min, bbox_max
     finally:
-        if tooling_box_builder is not None:
-            tooling_box_builder.Destroy()
+        if builder is not None:
+            builder.Destroy()
         collector.Destroy()
 
 
@@ -273,7 +273,7 @@ def _auto_grid_size(body_infos: List[BodyGeometryInfo]) -> Tuple[int, int, int]:
     effective_active_product = max(active_product, EPSILON)
     # active_axis_count is guaranteed to be non-zero because empty active_axes
     # returns earlier. Very small products are clamped to EPSILON so
-    # flat-but-active geometry still produces a finite Nth-root scale.
+    # flat-but-active geometry still produces a finite nth-root scale.
     nth_root_exponent = 1.0 / active_axis_count
     scale = (float(target_cell_count) / effective_active_product) ** nth_root_exponent
 
