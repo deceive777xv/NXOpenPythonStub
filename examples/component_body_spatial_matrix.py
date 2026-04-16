@@ -133,6 +133,7 @@ def _axis_cell_range(
     global_max: float,
     bucket_count: int,
 ) -> Tuple[int, int]:
+    """Map an axis-aligned body extent onto inclusive matrix cell indices."""
     if bucket_count <= 1 or abs(global_max - global_min) < EPSILON:
         return (0, 0)
 
@@ -223,6 +224,12 @@ def _component_bbox(
 
 
 def _auto_grid_size(body_infos: List[BodyGeometryInfo]) -> Tuple[int, int, int]:
+    """Estimate a grid from body count and overall component span.
+
+    The component bbox is derived from the body bboxes, normalized by the
+    dominant span, then scaled so the resulting grid roughly tracks the number
+    of bodies while respecting flat or degenerate geometry.
+    """
     if not body_infos:
         return DEFAULT_GRID_SIZE
 
@@ -268,6 +275,11 @@ def analyze_component_bodies(
     component: NXOpen.Assemblies.Component,
     grid_size: Optional[Tuple[int, int, int]] = None,
 ) -> ComponentBodyAnalysis:
+    """Analyze one component and build its spatial body matrix.
+
+    When ``grid_size`` is ``None``, the matrix shape is derived automatically
+    from the collected body data; otherwise the provided grid size is used.
+    """
     prototype_part = _component_prototype_part(component)
     prototype_bodies = prototype_part.Bodies.ToArray()
     directions = _create_extreme_directions(prototype_part)
@@ -341,6 +353,11 @@ def build_component_spatial_matrices(
     work_part: NXOpen.Part,
     grid_size: Optional[Tuple[int, int, int]] = None,
 ) -> Dict[str, ComponentBodyAnalysis]:
+    """Build component analyses keyed by component journal identifier.
+
+    When ``grid_size`` is ``None``, each component resolves its own automatic
+    grid size from its body data; otherwise the supplied override is applied.
+    """
     root_component = work_part.ComponentAssembly.RootComponent
     if root_component is None:
         return {}
