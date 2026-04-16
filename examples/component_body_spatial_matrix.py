@@ -8,6 +8,7 @@ import NXOpen.Assemblies
 DEFAULT_GRID_SIZE = (3, 3, 3)
 MAX_GRID_AXIS_CELLS = 8
 SAMPLE_MATRIX_FALLBACK_INDEX = 1
+BBOX_ALT_SOLUTION = 0
 MEASURE_ACCURACY = 0.99
 EPSILON = 1.0e-9
 
@@ -76,27 +77,6 @@ def _mass_units(part: NXOpen.Part) -> List[NXOpen.Unit]:
     ]
 
 
-def _direction_vectors() -> List[Tuple[str, NXOpen.Vector3d]]:
-    return [
-        ("+X", NXOpen.Vector3d(1.0, 0.0, 0.0)),
-        ("-X", NXOpen.Vector3d(-1.0, 0.0, 0.0)),
-        ("+Y", NXOpen.Vector3d(0.0, 1.0, 0.0)),
-        ("-Y", NXOpen.Vector3d(0.0, -1.0, 0.0)),
-        ("+Z", NXOpen.Vector3d(0.0, 0.0, 1.0)),
-        ("-Z", NXOpen.Vector3d(0.0, 0.0, -1.0)),
-    ]
-
-
-def _create_extreme_directions(part: NXOpen.Part) -> Dict[str, NXOpen.Direction]:
-    origin = NXOpen.Point3d(0.0, 0.0, 0.0)
-    return {
-        name: part.Directions.CreateDirection(
-            origin, vector, NXOpen.SmartObject.UpdateOption.WithinModeling
-        )
-        for name, vector in _direction_vectors()
-    }
-
-
 def _collector_for_body(part: NXOpen.Part, body: NXOpen.Body) -> NXOpen.ScCollector:
     collector = part.ScCollectors.CreateCollector()
     body_rule = part.ScRuleFactory.CreateRuleBodyDumb([body], True)
@@ -104,26 +84,147 @@ def _collector_for_body(part: NXOpen.Part, body: NXOpen.Body) -> NXOpen.ScCollec
     return collector
 
 
+def _bbox_units(part: NXOpen.Part) -> List[NXOpen.Unit]:
+    length_unit = part.UnitCollection.GetBase("Length")
+    return [length_unit]
+
+
+def _expression_label(expression: NXOpen.Expression) -> str:
+    parts: List[str] = []
+    for attr_name in ("Description", "Equation", "ExpressionString", "RightHandSide", "Type"):
+        value = getattr(expression, attr_name, "")
+        if value:
+            parts.append(str(value))
+
+    for getter_name in ("GetDescriptor", "GetFormula"):
+        getter = getattr(expression, getter_name, None)
+        if getter is None:
+            continue
+
+        try:
+            value = getter()
+        except Exception:
+            continue
+
+        if value:
+            parts.append(str(value))
+
+    return "".join(parts).lower().replace("_", "").replace(" ", "")
+
+
+def _expression_point_value(expression: NXOpen.Expression) -> Optional[Tuple[float, float, float]]:
+    for getter_name in ("PointValue", "GetPointValueWithUnits"):
+        getter = getattr(expression, getter_name, None)
+        if getter is None:
+            continue
+
+        try:
+            point = (
+                getter(NXOpen.Expression.UnitsOption.Base)
+                if getter_name == "GetPointValueWithUnits"
+                else getter
+            )
+        except Exception:
+            continue
+
+        if hasattr(point, "X") and hasattr(point, "Y") and hasattr(point, "Z"):
+            return (point.X, point.Y, point.Z)
+
+    return None
+
+
+def _expression_scalar_value(expression: NXOpen.Expression) -> float:
+    for getter_name in ("Value", "NumberValue", "GetValueUsingUnits"):
+        getter = getattr(expression, getter_name, None)
+        if getter is None:
+            continue
+
+        try:
+            value = (
+                getter(NXOpen.Expression.UnitsOption.Base)
+                if getter_name == "GetValueUsingUnits"
+                else getter
+            )
+        except Exception:
+            continue
+
+        if isinstance(value, (int, float)):
+            return float(value)
+
+    raise ValueError("Unable to resolve numeric value from bbox expression.")
+
+
+def _bbox_from_expressions(
+    expressions: List[NXOpen.Expression],
+) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
+    """Resolve bbox min/max tuples from BboxPropertiesElement expressions."""
+    point_values: Dict[str, Tuple[float, float, float]] = {}
+    scalar_values: Dict[str, float] = {}
+    scalar_aliases = {
+        "minx": ("minx", "xmin", "minimumx"),
+        "miny": ("miny", "ymin", "minimumy"),
+        "minz": ("minz", "zmin", "minimumz"),
+        "maxx": ("maxx", "xmax", "maximumx"),
+        "maxy": ("maxy", "ymax", "maximumy"),
+        "maxz": ("maxz", "zmax", "maximumz"),
+    }
+
+    for expression in expressions:
+        label = _expression_label(expression)
+        point_value = _expression_point_value(expression)
+        if point_value is not None:
+            if "min" in label:
+                point_values["min"] = point_value
+            elif "max" in label:
+                point_values["max"] = point_value
+            continue
+
+        for key, aliases in scalar_aliases.items():
+            if any(alias in label for alias in aliases):
+                scalar_values[key] = _expression_scalar_value(expression)
+                break
+
+    if "min" in point_values and "max" in point_values:
+        return point_values["min"], point_values["max"]
+
+    if all(key in scalar_values for key in scalar_aliases):
+        return (
+            (scalar_values["minx"], scalar_values["miny"], scalar_values["minz"]),
+            (scalar_values["maxx"], scalar_values["maxy"], scalar_values["maxz"]),
+        )
+
+    if len(expressions) >= 6:
+        fallback_values = [_expression_scalar_value(expression) for expression in expressions[:6]]
+        return (
+            cast(Tuple[float, float, float], tuple(fallback_values[:3])),
+            cast(Tuple[float, float, float], tuple(fallback_values[3:6])),
+        )
+
+    raise ValueError("Unable to extract min/max bbox values from BboxPropertiesElement.")
+
+
 def _body_bbox(
-    session: NXOpen.Session,
     part: NXOpen.Part,
     body: NXOpen.Body,
-    directions: Dict[str, NXOpen.Direction],
 ) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
+    """Measure a body's bbox via ``MeasureManager.BboxPropertiesElement``."""
     collector = _collector_for_body(part, body)
+    measure_element: Optional[NXOpen.MeasureElement] = None
     try:
-        x_max = session.Measurement.GetExtremePointProperties(collector, [directions["+X"]])
-        x_min = session.Measurement.GetExtremePointProperties(collector, [directions["-X"]])
-        y_max = session.Measurement.GetExtremePointProperties(collector, [directions["+Y"]])
-        y_min = session.Measurement.GetExtremePointProperties(collector, [directions["-Y"]])
-        z_max = session.Measurement.GetExtremePointProperties(collector, [directions["+Z"]])
-        z_min = session.Measurement.GetExtremePointProperties(collector, [directions["-Z"]])
+        measure_manager = part.MeasureManager
+        measure_element = measure_manager.BboxPropertiesElement(
+            measure_manager.MasterMeasurement(),
+            _bbox_units(part),
+            collector,
+            BBOX_ALT_SOLUTION,
+        )
+        expressions: List[NXOpen.Expression] = []
+        measure_element.GetMeasureElementExpressions(expressions)
+        return _bbox_from_expressions(expressions)
     finally:
+        if measure_element is not None:
+            measure_element.FreeResource()
         collector.Destroy()
-
-    bbox_min = (x_min.X, y_min.Y, z_min.Z)
-    bbox_max = (x_max.X, y_max.Y, z_max.Z)
-    return bbox_min, bbox_max
 
 
 def _axis_cell_range(
@@ -153,11 +254,9 @@ def _axis_cell_range(
 
 
 def _body_geometry(
-    session: NXOpen.Session,
     part: NXOpen.Part,
     component: NXOpen.Assemblies.Component,
     body: NXOpen.Body,
-    directions: Dict[str, NXOpen.Direction],
 ) -> BodyGeometryInfo:
     mass_properties = part.MeasureManager.NewMassProperties(
         _mass_units(part), MEASURE_ACCURACY, [body]
@@ -169,7 +268,7 @@ def _body_geometry(
     finally:
         mass_properties.Dispose()
 
-    bbox_min, bbox_max = _body_bbox(session, part, body, directions)
+    bbox_min, bbox_max = _body_bbox(part, body)
     bbox_center = (
         (bbox_min[0] + bbox_max[0]) / 2.0,
         (bbox_min[1] + bbox_max[1]) / 2.0,
@@ -295,10 +394,9 @@ def analyze_component_bodies(
     """
     prototype_part = _component_prototype_part(component)
     prototype_bodies = prototype_part.Bodies.ToArray()
-    directions = _create_extreme_directions(prototype_part)
 
     body_infos = [
-        _body_geometry(session, prototype_part, component, body, directions)
+        _body_geometry(prototype_part, component, body)
         for body in prototype_bodies
     ]
 
