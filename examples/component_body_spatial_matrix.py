@@ -257,11 +257,13 @@ def _auto_grid_size(body_infos: List[BodyGeometryInfo]) -> Tuple[int, int, int]:
         active_product *= normalized_spans[index]
 
     # active_axes is bounded by the three model-space axes.
-    max_cell_count = axis_cap ** len(active_axes)
+    active_axis_count = len(active_axes)
+    max_cell_count = axis_cap ** active_axis_count
     target_cell_count = min(body_count, max_cell_count)
-    # EPSILON prevents divide-by-zero when the normalized span product is tiny.
+    # EPSILON prevents divide-by-zero while the reciprocal computes the
+    # active-axis root used to spread cells across the component aspect ratio.
     scale = (float(target_cell_count) / max(active_product, EPSILON)) ** (
-        1.0 / len(active_axes)
+        1.0 / active_axis_count
     )
 
     axis_counts = [1, 1, 1]
@@ -392,6 +394,7 @@ def _format_vector(values: Tuple[float, float, float]) -> str:
 
 
 def _sample_matrix_index(shape: Tuple[int, int, int]) -> Tuple[int, int, int]:
+    """Return a stable sample cell anchored at the first X slice."""
     return (
         0,
         min(SAMPLE_MATRIX_FALLBACK_INDEX, shape[1] - 1),
