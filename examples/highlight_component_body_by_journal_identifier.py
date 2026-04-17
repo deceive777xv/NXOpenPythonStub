@@ -4,6 +4,8 @@ import NXOpen
 import NXOpen.Assemblies
 
 
+# Set these values to the target component/body JournalIdentifier strings
+# before running the script.
 user_component_journal_identifier = ""
 user_body_journal_identifier = ""
 
@@ -36,13 +38,15 @@ def _find_body_occurrence(
     except NXOpen.NXException:
         return None
 
+    fallback_body = cast(NXOpen.DisplayableObject, prototype_body)
+
     try:
         body_occurrence = component.FindOccurrence(prototype_body)
     except NXOpen.NXException:
-        return cast(NXOpen.DisplayableObject, prototype_body)
+        return fallback_body
 
     if body_occurrence in (None, NXOpen.NXObject.Null):
-        return cast(NXOpen.DisplayableObject, prototype_body)
+        return fallback_body
 
     return cast(NXOpen.DisplayableObject, body_occurrence)
 
