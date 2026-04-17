@@ -125,6 +125,7 @@ def _box_builder_init(part: NXOpen.Part):
     toolingBoxBuilder = part.Features.ToolingFeatureCollection.CreateToolingBoxBuilder(
         NXOpen.Features.ToolingBox.Null
     )
+    toolingBoxBuilder.Type = NXOpen.Features.ToolingBoxBuiler.Type.BoundedBlock
     matrix = NXOpen.Matrix3x3()
     matrix.Xx = 1.0
     matrix.Xy = 0.0
@@ -150,6 +151,7 @@ def _body_bbox(
         builder = _box_builder_init(part)
         collector = _collector_for_body(part, body, builder)
         selections = [NXOpen.NXObject.Null] * 1
+        selections[0] = body
         deselections = []
         builder.SetSelectedOccurrences(selections, deselections)
         builder.CalculateBoxSize()
@@ -160,6 +162,8 @@ def _body_bbox(
             builder.CommitFeature().GetExpressions()[3].Value,
         )
         return bbox, bbox_size
+    except:
+        return NXOpen.NXObject.Null, (0, 0, 0)
     finally:
         if builder is not None:
             builder.Destroy()
@@ -193,6 +197,7 @@ def _axis_cell_range(
 
 
 def _body_geometry(
+    session: NXOpen.Session,
     part: NXOpen.Part,
     component: NXOpen.Assemblies.Component,
     body: NXOpen.Body,
