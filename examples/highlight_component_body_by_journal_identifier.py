@@ -4,8 +4,8 @@ import NXOpen
 import NXOpen.Assemblies
 
 
-COMPONENT_JOURNAL_IDENTIFIER = ""
-BODY_JOURNAL_IDENTIFIER = ""
+user_component_journal_identifier = ""
+user_body_journal_identifier = ""
 
 
 def _walk_components(
@@ -39,12 +39,12 @@ def _find_body_occurrence(
     try:
         body_occurrence = component.FindOccurrence(prototype_body)
     except NXOpen.NXException:
-        body_occurrence = NXOpen.NXObject.Null
+        return cast(NXOpen.DisplayableObject, prototype_body)
 
-    if body_occurrence not in (None, NXOpen.NXObject.Null):
-        return cast(NXOpen.DisplayableObject, body_occurrence)
+    if body_occurrence in (None, NXOpen.NXObject.Null):
+        return cast(NXOpen.DisplayableObject, prototype_body)
 
-    return cast(NXOpen.DisplayableObject, prototype_body)
+    return cast(NXOpen.DisplayableObject, body_occurrence)
 
 
 def main() -> None:
@@ -52,9 +52,9 @@ def main() -> None:
     listing_window = session.ListingWindow
     listing_window.Open()
 
-    if not COMPONENT_JOURNAL_IDENTIFIER or not BODY_JOURNAL_IDENTIFIER:
+    if not user_component_journal_identifier or not user_body_journal_identifier:
         listing_window.WriteLine(
-            "Please set COMPONENT_JOURNAL_IDENTIFIER and BODY_JOURNAL_IDENTIFIER first."
+            "Please set user_component_journal_identifier and user_body_journal_identifier first."
         )
         return
 
@@ -70,16 +70,16 @@ def main() -> None:
         )
         return
 
-    component = _find_component(root_component, COMPONENT_JOURNAL_IDENTIFIER)
+    component = _find_component(root_component, user_component_journal_identifier)
     if component is None:
         listing_window.WriteLine(
-            "Component not found: {0}".format(COMPONENT_JOURNAL_IDENTIFIER)
+            "Component not found: {0}".format(user_component_journal_identifier)
         )
         return
 
-    body = _find_body_occurrence(component, BODY_JOURNAL_IDENTIFIER)
+    body = _find_body_occurrence(component, user_body_journal_identifier)
     if body is None:
-        listing_window.WriteLine("Body not found: {0}".format(BODY_JOURNAL_IDENTIFIER))
+        listing_window.WriteLine("Body not found: {0}".format(user_body_journal_identifier))
         return
 
     if body.IsBlanked:
@@ -92,7 +92,7 @@ def main() -> None:
     listing_window.WriteLine(
         "Component JournalIdentifier: {0}".format(component.JournalIdentifier)
     )
-    listing_window.WriteLine("Body JournalIdentifier: {0}".format(BODY_JOURNAL_IDENTIFIER))
+    listing_window.WriteLine("Body JournalIdentifier: {0}".format(user_body_journal_identifier))
     listing_window.WriteLine("The target body has been highlighted.")
 
 
