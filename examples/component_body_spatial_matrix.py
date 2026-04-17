@@ -49,10 +49,10 @@ class ComponentBodyAnalysis:
     matrix: SpatialBodyMatrix
     bodies: List[BodyGeometryInfo]
 
-def _deleteFeature(session:NXOpen.Session, workPart:NXOpen.part, id):
+def _deleteFeature(session:NXOpen.Session, workPart:NXOpen.Part, id):
     markId = session.SetUndoMark(NXOpen.Session.MarkVisibility.Visible, "Delete")
     session.UpdateManager.ClearErrorList()
-    object = [NXOpen.TaggedObject.Null] * 1
+    objects = [NXOpen.TaggedObject.Null] * 1
     feature = workPart.Features.FindObject(f"{id}")
     objects[0] = feature
     nErrs1 = session.UpdateManager.AddObjectsToDeleteList(objects)
@@ -125,7 +125,7 @@ def _box_builder_init(part: NXOpen.Part):
     toolingBoxBuilder = part.Features.ToolingFeatureCollection.CreateToolingBoxBuilder(
         NXOpen.Features.ToolingBox.Null
     )
-    toolingBoxBuilder.Type = NXOpen.Features.ToolingBoxBuiler.Type.BoundedBlock
+    toolingBoxBuilder.Type = NXOpen.Features.ToolingBoxBuilder.Types.BoundedBlock
     matrix = NXOpen.Matrix3x3()
     matrix.Xx = 1.0
     matrix.Xy = 0.0
