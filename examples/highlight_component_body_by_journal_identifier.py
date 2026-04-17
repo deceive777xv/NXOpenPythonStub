@@ -33,12 +33,12 @@ def _find_body_occurrence(
 
     try:
         prototype_body = prototype_part.Bodies.FindObject(body_journal_identifier)
-    except Exception:
+    except NXOpen.NXException:
         return None
 
     try:
         body_occurrence = component.FindOccurrence(prototype_body)
-    except Exception:
+    except NXOpen.NXException:
         body_occurrence = NXOpen.NXObject.Null
 
     if body_occurrence not in (None, NXOpen.NXObject.Null):
