@@ -84,7 +84,11 @@ def main() -> None:
 
     body = _find_body_occurrence(component, user_body_journal_identifier)
     if body is None:
-        listing_window.WriteLine("Body not found: {0}".format(user_body_journal_identifier))
+        listing_window.WriteLine(
+            "Body not found: {0} in component {1}".format(
+                user_body_journal_identifier, user_component_journal_identifier
+            )
+        )
         return
 
     if body.IsBlanked:
