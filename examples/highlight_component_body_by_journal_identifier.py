@@ -58,7 +58,8 @@ def main() -> None:
 
     if not user_component_journal_identifier or not user_body_journal_identifier:
         listing_window.WriteLine(
-            "Please set user_component_journal_identifier and user_body_journal_identifier first."
+            "Please set user_component_journal_identifier and "
+            "user_body_journal_identifier at the top of the script before running."
         )
         return
 
@@ -100,7 +101,7 @@ def main() -> None:
     listing_window.WriteLine("The target body has been highlighted.")
 
 
-def get_unload_option(_: str) -> NXOpen.Session.LibraryUnloadOption:
+def get_unload_option(arg: str) -> NXOpen.Session.LibraryUnloadOption:
     return NXOpen.Session.LibraryUnloadOption.Immediately
 
 
