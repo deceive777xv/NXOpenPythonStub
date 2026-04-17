@@ -49,6 +49,17 @@ class ComponentBodyAnalysis:
     matrix: SpatialBodyMatrix
     bodies: List[BodyGeometryInfo]
 
+def _deleteFeature(session:NXOpen.Session, workPart:NXOpen.part, id):
+    markId = session.SetUndoMark(NXOpen.Session.MarkVisibility.Visible, "Delete")
+    session.UpdateManager.ClearErrorList()
+    object = [NXOpen.TaggedObject.Null] * 1
+    feature = workPart.Features.FindObject(f"{id}")
+    objects[0] = feature
+    nErrs1 = session.UpdateManager.AddObjectsToDeleteList(objects)
+    id = session.NewestVisibleUndoMark
+    nErrs2 = session.UpdateManager.DoUpdate(id)
+    if markId:
+        session.DeleteUndoMark(markId, "Delete Mark")
 
 def _walk_components(
     component: NXOpen.Assemblies.Component,
@@ -69,18 +80,24 @@ def _component_prototype_part(component: NXOpen.Assemblies.Component) -> NXOpen.
 
 def _mass_units(part: NXOpen.Part) -> List[NXOpen.Unit]:
     unit_collection = part.UnitCollection
-    return [
-        unit_collection.GetBase("Area"),
-        unit_collection.GetBase("Volume"),
-        unit_collection.GetBase("Mass"),
-        unit_collection.GetBase("Length"),
-    ]
+    massUnits = [NXOpen.Unit.Null] * 8
+    massUnits[0] = unit_collection.FindObject("MilliMeter")
+    massUnits[1] = unit_collection.FindObject("SquareMilliMeter")
+    massUnits[2] = unit_collection.FindObject("CubicMilliMeter")
+    massUnits[3] = unit_collection.FindObject("KilogramPerCubicMilliMeter")
+    massUnits[4] = unit_collection.FindObject("Kilogram")
+    massUnits[5] = unit_collection.FindObject("KilogramMilliMeterSquared")
+    massUnits[6] = unit_collection.FindObject("KilogramMilliMeter")
+    massUnits[7] = unit_collection.FindObject("Newton")
+    return massUnits
 
 
-def _collector_for_body(part: NXOpen.Part, body: NXOpen.Body) -> NXOpen.ScCollector:
-    collector = part.ScCollectors.CreateCollector()
-    body_rule = part.ScRuleFactory.CreateRuleBodyDumb([body], True)
-    collector.ReplaceRules([body_rule], False)
+def _collector_for_body(part: NXOpen.Part, body: NXOpen.Body, builder: NXOpen.Features.ToolingBoxBuilder) -> NXOpen.ScCollector:
+    bodyDumbRule = part.ScRuleFactory.CreateRuleBodyDumb([body], True)
+    collector = builder.BoundedObject
+    rules = [None] * 1
+    rules[0] = bodyDumbRule
+    collector.ReplaceRules(rules, False)
     return collector
 
 
@@ -104,38 +121,49 @@ def _extract_scalar_from_expression(expression: NXOpen.Expression) -> float:
 
     raise ValueError("Unable to resolve numeric value from tooling box expression.")
 
+def _box_builder_init(part: NXOpen.Part):
+    toolingBoxBuilder = part.Features.ToolingFeatureCollection.CreateToolingBoxBuilder(
+        NXOpen.Features.ToolingBox.Null
+    )
+    matrix = NXOpen.Matrix3x3()
+    matrix.Xx = 1.0
+    matrix.Xy = 0.0
+    matrix.Xz = 0.0
+    matrix.Yx = 0.0
+    matrix.Yy = 1.0
+    matrix.Yz = 0.0
+    matrix.Zx = 0.0
+    matrix.Zy = 0.0
+    matrix.Zz = 1.0
+    position = NXOpen.Point3d(0.0, 0.0, 0.0)
+    toolingBoxBuilder.setBoxMatrixandPosition(matrix, position)
+    return toolingBoxBuilder
 
 def _body_bbox(
     part: NXOpen.Part,
     body: NXOpen.Body,
-) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
+) -> Tuple[NXOpen.NXObject, Tuple[float, float, float]]:
     """Measure a body's bbox via ``CreateToolingBoxBuilder``."""
-    collector = _collector_for_body(part, body)
+    
     builder: Optional[NXOpen.Features.ToolingBoxBuilder] = None
     try:
-        builder = part.Features.ToolingFeatureCollection.CreateToolingBoxBuilder(
-            NXOpen.Features.ToolingBox.Null
-        )
-        builder.Type = NXOpen.Features.ToolingBoxBuilder.Types.BoundedBlock
-        builder.BoundedObject = collector
+        builder = _box_builder_init(part)
+        collector = _collector_for_body(part, body, builder)
+        selections = [NXOpen.NXObject.Null] * 1
+        deselections = []
+        builder.SetSelectedOccurrences(selections, deselections)
         builder.CalculateBoxSize()
-
-        bbox_min = _point_to_tuple(builder.BoxPosition)
+        bbox = builder.Commit()
         bbox_size = (
-            _extract_scalar_from_expression(builder.XValue),
-            _extract_scalar_from_expression(builder.YValue),
-            _extract_scalar_from_expression(builder.ZValue),
+            builder.CommitFeature().GetExpressions()[1].Value,
+            builder.CommitFeature().GetExpressions()[2].Value,
+            builder.CommitFeature().GetExpressions()[3].Value,
         )
-        bbox_max = (
-            bbox_min[0] + bbox_size[0],
-            bbox_min[1] + bbox_size[1],
-            bbox_min[2] + bbox_size[2],
-        )
-        return bbox_min, bbox_max
+        return bbox, bbox_size
     finally:
         if builder is not None:
             builder.Destroy()
-        collector.Destroy()
+        # collector.Destroy()
 
 
 def _axis_cell_range(
@@ -179,16 +207,29 @@ def _body_geometry(
     finally:
         mass_properties.Dispose()
 
-    bbox_min, bbox_max = _body_bbox(part, body)
-    bbox_center = (
-        (bbox_min[0] + bbox_max[0]) / 2.0,
-        (bbox_min[1] + bbox_max[1]) / 2.0,
-        (bbox_min[2] + bbox_max[2]) / 2.0,
+    bbox, bbox_size = _body_bbox(part, body)
+    try:
+        bbox_body = part.Bodies.FindObject(bbox.JournalIdentifier)
+        bbox_properties = part.MeasureManager.NewMassProperties(
+            _mass_units(part), MEASURE_ACCURACY, [bbox_body]
+        )
+        bbox_center = _point_to_tuple(mass_properties.Centroid)
+        bbox_properties.Dispose()
+    except:
+        bbox_center = centroid
+    try:
+        _deleteFeature(session, part, bbox.JournalIdentifier)
+    except:
+        pass
+    bbox_max = (
+        bbox_center[0] + 0.5*bbox_size[0],
+        bbox_center[1] + 0.5*bbox_size[1],
+        bbox_center[2] + 0.5*bbox_size[2],
     )
-    bbox_size = (
-        bbox_max[0] - bbox_min[0],
-        bbox_max[1] - bbox_min[1],
-        bbox_max[2] - bbox_min[2],
+    bbox_min = (
+        bbox_center[0] - 0.5*bbox_size[0],
+        bbox_center[1] - 0.5*bbox_size[1],
+        bbox_center[2] - 0.5*bbox_size[2],
     )
 
     return BodyGeometryInfo(
@@ -305,12 +346,19 @@ def analyze_component_bodies(
         box, resolved spatial matrix, and collected per-body geometry entries.
     """
     prototype_part = _component_prototype_part(component)
-    prototype_bodies = prototype_part.Bodies.ToArray()
+    partLoadStatus = session.Parts.SetWorkComponent(component, NXOpen.PartCollection.RefsetOption.Entire,
+                                                   NXOpen.PartCollection.WorkComponentOption.Visible)
+    part = session.parts.Work
+    partLoadStatus.Dispose()
+    prototype_bodies = prototype_part.Bodies
 
-    body_infos = [
-        _body_geometry(prototype_part, component, body)
-        for body in prototype_bodies
-    ]
+    body_infos: List[BodyGeometryInfo] = []
+    for body in prototype_bodies:
+        if body.IsBlanked:
+            continue
+        body_infos.append(
+            _body_geometry(session, part, component, body)
+        )
 
     if not body_infos:
         resolved_grid_size = grid_size or DEFAULT_GRID_SIZE
@@ -429,6 +477,12 @@ def main() -> None:
         return
 
     analyses = build_component_spatial_matrices(work_part)
+
+    partLoadStatus = session.Parts.SetWorkComponent(NXOpen.Assemblies.Component.Null, NXOpen.PartCollection.RefsetOption.Entire,
+                                                   NXOpen.PartCollection.WorkComponentOption.Visible)
+    part = session.parts.Work
+    partLoadStatus.Dispose()
+    
     listing_window.WriteLine(
         "Generated component body spatial matrices: {0}".format(len(analyses))
     )
