@@ -106,6 +106,7 @@ def main() -> None:
 
 
 def get_unload_option(arg: str) -> NXOpen.Session.LibraryUnloadOption:
+    # NX passes the journal name to this callback.
     return NXOpen.Session.LibraryUnloadOption.Immediately
 
 
