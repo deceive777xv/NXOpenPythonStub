@@ -6,8 +6,8 @@ import NXOpen.Assemblies
 
 # Set these values to the target component/body JournalIdentifier strings
 # before running the script.
-user_component_journal_identifier = ""
-user_body_journal_identifier = ""
+user_component_journal_identifier: Optional[str] = None
+user_body_journal_identifier: Optional[str] = None
 
 
 def _walk_components(
@@ -45,7 +45,7 @@ def _find_body_occurrence(
     except NXOpen.NXException:
         return fallback_body
 
-    if body_occurrence in (None, NXOpen.NXObject.Null):
+    if body_occurrence == NXOpen.NXObject.Null:
         return fallback_body
 
     return cast(NXOpen.DisplayableObject, body_occurrence)
