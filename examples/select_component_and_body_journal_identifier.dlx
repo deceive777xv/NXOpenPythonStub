@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<DlgDef xmlns="http://www.ugs.com/ResourceEditor" version="1.0.0">
+  <Dialog id="select_component_and_body_journal_identifier"
+          title="Select Body Journal Identifier"
+          layout="Vertical">
+    <Block id="body_select" type="SelectObject">
+      <Label>Select body occurrence</Label>
+      <ShowLabel>true</ShowLabel>
+      <SelectionType>Bodies</SelectionType>
+      <AllowMultipleSelection>false</AllowMultipleSelection>
+    </Block>
+  </Dialog>
+</DlgDef>
