@@ -43,11 +43,11 @@ def _resolve_component_body_identifier(
     if component is None or component == NXOpen.NXObject.Null:
         return None, prototype_body, None
 
-    component_occurrence = cast(NXOpen.Body, component.FindOccurrence(prototype_body))
-    if component_occurrence == NXOpen.NXObject.Null:
+    body_occurrence = cast(NXOpen.Body, component.FindOccurrence(prototype_body))
+    if body_occurrence == NXOpen.NXObject.Null:
         return component, prototype_body, None
 
-    return component, prototype_body, component_occurrence
+    return component, prototype_body, body_occurrence
 
 
 class BodyIdentifierDialog:
@@ -90,7 +90,7 @@ class BodyIdentifierDialog:
             listing_window.WriteLine("Please select one body occurrence in the assembly.")
             return 0
 
-        component, prototype_body, component_occurrence = _resolve_component_body_identifier(
+        component, prototype_body, body_occurrence = _resolve_component_body_identifier(
             body
         )
         listing_window.WriteLine("Selected body occurrence JournalIdentifier:")
@@ -119,10 +119,10 @@ class BodyIdentifierDialog:
             )
         )
 
-        if component_occurrence is not None:
+        if body_occurrence is not None:
             listing_window.WriteLine(
                 "Recovered occurrence matches selected body: {0}".format(
-                    component_occurrence.Tag == body.Tag
+                    body_occurrence.Tag == body.Tag
                 )
             )
 
