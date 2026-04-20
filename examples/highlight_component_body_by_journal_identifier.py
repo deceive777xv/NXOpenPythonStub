@@ -7,6 +7,7 @@ import NXOpen.Assemblies
 # Set these values to the target component/body JournalIdentifier strings
 # before running the script.
 user_component_journal_identifier: Optional[str] = None
+user_component_name: Optional[str] = None
 user_body_journal_identifier: Optional[str] = None
 
 
@@ -27,6 +28,14 @@ def _find_component(
             return component
     return None
 
+def _find_component_by_name(
+    root_component: NXOpen.Assemblies.Component, name: str
+) -> Optional[NXOpen.Assemblies.Component]:
+    for component in _walk_components(root_component):
+        if component.DisplayName == name:
+            return component
+    return None
+
 
 def _find_body_occurrence(
     component: NXOpen.Assemblies.Component, body_journal_identifier: str
@@ -35,20 +44,21 @@ def _find_body_occurrence(
 
     try:
         prototype_body = prototype_part.Bodies.FindObject(body_journal_identifier)
+        return prototype_body
     except NXOpen.NXException:
         return None
 
-    fallback_body = cast(NXOpen.DisplayableObject, prototype_body)
+    # fallback_body = cast(NXOpen.DisplayableObject, prototype_body)
 
-    try:
-        body_occurrence = component.FindOccurrence(prototype_body)
-    except NXOpen.NXException:
-        return fallback_body
+    # try:
+    #     body_occurrence = component.FindOccurrence(prototype_body)
+    # except NXOpen.NXException:
+    #     return fallback_body
 
-    if body_occurrence == NXOpen.NXObject.Null:
-        return fallback_body
+    # if body_occurrence == NXOpen.NXObject.Null:
+    #     return fallback_body
 
-    return cast(NXOpen.DisplayableObject, body_occurrence)
+    # return cast(NXOpen.DisplayableObject, body_occurrence)
 
 
 def main() -> None:
