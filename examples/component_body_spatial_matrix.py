@@ -445,6 +445,8 @@ def build_component_spatial_matrices(
     session = NXOpen.Session.GetSession()
     analyses: Dict[str, ComponentBodyAnalysis] = {}
     for component in _walk_components(root_component):
+        if component.IsBlanked:
+            continue
         analyses[component.JournalIdentifier] = analyze_component_bodies(
             session, component, grid_size
         )
