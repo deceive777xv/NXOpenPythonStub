@@ -84,7 +84,7 @@ def _resolve_component_grid_size(
 
     return _normalize_grid_size(grid_size)
 
-def _deleteFeature(session:NXOpen.Session, workPart:NXOpen.Part, id):
+def _deleteFeature(session: NXOpen.Session, workPart: NXOpen.Part, id):
     markId = session.SetUndoMark(NXOpen.Session.MarkVisibility.Visible, "Delete")
     session.UpdateManager.ClearErrorList()
     objects = [NXOpen.TaggedObject.Null] * 1
