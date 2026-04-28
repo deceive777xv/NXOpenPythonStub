@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, cast
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple, cast
 
 import NXOpen
 import NXOpen.Assemblies
@@ -11,6 +11,12 @@ MAX_GRID_AXIS_CELLS = 8
 SAMPLE_MATRIX_FALLBACK_INDEX = 1
 MEASURE_ACCURACY = 0.99
 EPSILON = 1.0e-9
+GridSize = Tuple[int, int, int]
+GridSizeOverrides = Mapping[str, Sequence[int]]
+
+# Manual per-component grid overrides. Keys can be either
+# component.JournalIdentifier or component.DisplayName.
+COMPONENT_GRID_SIZE_OVERRIDES: GridSizeOverrides = {}
 
 
 @dataclass
@@ -48,6 +54,35 @@ class ComponentBodyAnalysis:
     component_bbox_max: Tuple[float, float, float]
     matrix: SpatialBodyMatrix
     bodies: List[BodyGeometryInfo]
+
+
+def _normalize_grid_size(grid_size: Sequence[int]) -> GridSize:
+    if len(grid_size) != 3:
+        raise ValueError("grid_size must contain exactly three axis values.")
+
+    normalized = tuple(int(value) for value in grid_size)
+    if any(value <= 0 for value in normalized):
+        raise ValueError("grid_size axis values must be positive integers.")
+
+    return cast(GridSize, normalized)
+
+
+def _resolve_component_grid_size(
+    component: NXOpen.Assemblies.Component,
+    grid_size: Optional[GridSize],
+    grid_size_overrides: Optional[GridSizeOverrides],
+) -> Optional[GridSize]:
+    if grid_size_overrides is not None:
+        override = grid_size_overrides.get(component.JournalIdentifier)
+        if override is None:
+            override = grid_size_overrides.get(component.DisplayName)
+        if override is not None:
+            return _normalize_grid_size(override)
+
+    if grid_size is None:
+        return None
+
+    return _normalize_grid_size(grid_size)
 
 def _deleteFeature(session:NXOpen.Session, workPart:NXOpen.Part, id):
     markId = session.SetUndoMark(NXOpen.Session.MarkVisibility.Visible, "Delete")
@@ -339,7 +374,7 @@ def _auto_grid_size(body_infos: List[BodyGeometryInfo]) -> Tuple[int, int, int]:
 def analyze_component_bodies(
     session: NXOpen.Session,
     component: NXOpen.Assemblies.Component,
-    grid_size: Optional[Tuple[int, int, int]] = None,
+    grid_size: Optional[GridSize] = None,
 ) -> ComponentBodyAnalysis:
     """Analyze one component and build its spatial body matrix.
 
@@ -427,12 +462,15 @@ def analyze_component_bodies(
 
 def build_component_spatial_matrices(
     work_part: NXOpen.Part,
-    grid_size: Optional[Tuple[int, int, int]] = None,
+    grid_size: Optional[GridSize] = None,
+    grid_size_overrides: Optional[GridSizeOverrides] = None,
 ) -> Dict[str, ComponentBodyAnalysis]:
     """Build component analyses keyed by component journal identifier.
 
     When ``grid_size`` is ``None``, each component resolves its own automatic
     grid size from its body data; otherwise the supplied override is applied.
+    ``grid_size_overrides`` can be used to manually set different grid sizes
+    for specific components by journal identifier or display name.
 
     Returns:
         A dictionary keyed by component journal identifier with the
@@ -447,8 +485,11 @@ def build_component_spatial_matrices(
     for component in _walk_components(root_component):
         if component.IsBlanked:
             continue
+        resolved_grid_size = _resolve_component_grid_size(
+            component, grid_size, grid_size_overrides
+        )
         analyses[component.JournalIdentifier] = analyze_component_bodies(
-            session, component, grid_size
+            session, component, resolved_grid_size
         )
 
     return analyses
@@ -483,7 +524,9 @@ def main() -> None:
         )
         return
 
-    analyses = build_component_spatial_matrices(work_part)
+    analyses = build_component_spatial_matrices(
+        work_part, grid_size_overrides=COMPONENT_GRID_SIZE_OVERRIDES
+    )
 
     partLoadStatus = session.Parts.SetWorkComponent(NXOpen.Assemblies.Component.Null, NXOpen.PartCollection.RefsetOption.Entire,
                                                    NXOpen.PartCollection.WorkComponentOption.Visible)

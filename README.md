@@ -35,7 +35,7 @@ Point `python.analysis.stubPath` to the directory that contains `NXOpen/` and `N
 ## Examples
 
 - `examples/traverse_all_components.py`: recursively traverses all assembly components from the work part root component and writes the result to the NX Listing Window.
-- `examples/component_body_spatial_matrix.py`: collects per-body geometry data and builds a tuple-indexed 3D spatial matrix such as `matrix[0, 1, 1]`, with automatic grid sizing derived from the body data.
+- `examples/component_body_spatial_matrix.py`: collects per-body geometry data and builds a tuple-indexed 3D spatial matrix such as `matrix[0, 1, 1]`, with automatic grid sizing derived from the body data and optional per-component manual grid-size overrides.
 - `examples/highlight_component_body_by_journal_identifier.py`: finds a body occurrence from a component JournalIdentifier and a body JournalIdentifier, then highlights that body in the assembly.
 
 ## Regeneration
