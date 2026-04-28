@@ -105,14 +105,12 @@ def set_component_grid_size_overrides(
         function always returns a new normalized dictionary and never mutates
         module-level state.
     """
-    normalized_existing = (
-        {}
-        if overrides is None
-        else {
+    normalized_existing: Dict[str, GridSize] = {}
+    if overrides is not None:
+        normalized_existing = {
             identifier: _normalize_grid_size(override)
             for identifier, override in overrides.items()
         }
-    )
 
     if isinstance(component_or_overrides, str):
         if grid_size is None:
@@ -122,7 +120,7 @@ def set_component_grid_size_overrides(
 
         if replace:
             raise ValueError(
-                "replace can only be used when setting overrides from a mapping."
+                "replace can only be True when component_or_overrides is a mapping, not a string identifier."
             )
 
         normalized_existing[component_or_overrides] = _normalize_grid_size(grid_size)
