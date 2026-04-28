@@ -120,7 +120,7 @@ def set_component_grid_size_overrides(
 
         if replace:
             raise ValueError(
-                "replace can only be True when component_or_overrides is a mapping, not a string identifier."
+                "replace can only be True when component_or_overrides is a GridSizeOverrides mapping, not a string component identifier."
             )
 
         normalized_existing[component_or_overrides] = _normalize_grid_size(grid_size)
