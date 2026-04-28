@@ -93,16 +93,17 @@ def set_component_grid_size_overrides(
 
     Args:
         component_or_overrides: A single component identifier or a mapping of
-            component identifiers to grid sizes.
+            component identifiers to grid-size sequences.
         grid_size: The grid size for a single component override.
         overrides: The existing overrides mapping to update.
         replace: When ``True``, return only the provided mapping update.
 
     Notes:
-        External callers can either update a single component override by
-        passing ``component_or_overrides`` and ``grid_size`` or provide a
-        complete mapping of overrides. The function always returns a new
-        normalized dictionary and never mutates module-level state.
+        External callers can either add a single component override to the
+        returned mapping by passing ``component_or_overrides`` and
+        ``grid_size`` or provide a complete mapping of overrides. The
+        function always returns a new normalized dictionary and never mutates
+        module-level state.
     """
     normalized_existing = (
         {}
