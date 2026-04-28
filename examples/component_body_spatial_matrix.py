@@ -174,7 +174,7 @@ def _box_builder_init(part: NXOpen.Part):
     matrix.Zy = 0.0
     matrix.Zz = 1.0
     position = NXOpen.Point3d(0.0, 0.0, 0.0)
-    toolingBoxBuilder.setBoxMatrixandPosition(matrix, position)
+    toolingBoxBuilder.SetBoxMatrixAndPosition(matrix, position)
     return toolingBoxBuilder
 
 def _body_bbox(
@@ -245,7 +245,7 @@ def _body_geometry(
     try:
         centroid = _point_to_tuple(mass_properties.Centroid)
         area = mass_properties.Area
-        mass = mass_properties.Mass
+        mass = mass_properties.Volume
     finally:
         mass_properties.Dispose()
 
@@ -255,7 +255,7 @@ def _body_geometry(
         bbox_properties = part.MeasureManager.NewMassProperties(
             _mass_units(part), MEASURE_ACCURACY, [bbox_body]
         )
-        bbox_center = _point_to_tuple(mass_properties.Centroid)
+        bbox_center = _point_to_tuple(bbox_properties.Centroid)
         bbox_properties.Dispose()
     except:
         bbox_center = centroid
@@ -390,7 +390,7 @@ def analyze_component_bodies(
     prototype_part = _component_prototype_part(component)
     partLoadStatus = session.Parts.SetWorkComponent(component, NXOpen.PartCollection.RefsetOption.Entire,
                                                    NXOpen.PartCollection.WorkComponentOption.Visible)
-    part = session.parts.Work
+    part = session.Parts.Work
     partLoadStatus.Dispose()
     prototype_bodies = prototype_part.Bodies
 
@@ -532,7 +532,7 @@ def main() -> None:
 
     partLoadStatus = session.Parts.SetWorkComponent(NXOpen.Assemblies.Component.Null, NXOpen.PartCollection.RefsetOption.Entire,
                                                    NXOpen.PartCollection.WorkComponentOption.Visible)
-    part = session.parts.Work
+    part = session.Parts.Work
     partLoadStatus.Dispose()
     
     listing_window.WriteLine(
