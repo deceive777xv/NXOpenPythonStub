@@ -17,8 +17,10 @@ GridSize = Tuple[int, int, int]
 GridSizeOverrides = Mapping[str, Sequence[int]]
 
 # Manual per-component grid overrides. Keys can be either
-# component.JournalIdentifier or component.DisplayName.
-COMPONENT_GRID_SIZE_OVERRIDES: GridSizeOverrides = {}
+# component.JournalIdentifier or component.DisplayName. Call
+# ``set_component_grid_size_overrides(component_identifier, grid_size)`` to
+# update these values one component at a time.
+COMPONENT_GRID_SIZE_OVERRIDES: Dict[str, GridSize] = {}
 
 
 @dataclass
@@ -85,6 +87,14 @@ def _resolve_component_grid_size(
         return None
 
     return grid_size
+
+
+def set_component_grid_size_overrides(
+    component_identifier: str,
+    grid_size: Sequence[int],
+) -> None:
+    """Set the manual grid overrides used by ``main()``."""
+    COMPONENT_GRID_SIZE_OVERRIDES[component_identifier] = _normalize_grid_size(grid_size)
 
 def _deleteFeature(session: NXOpen.Session, work_part: NXOpen.Part, feature_id):
     markId = session.SetUndoMark(NXOpen.Session.MarkVisibility.Visible, "Delete")
