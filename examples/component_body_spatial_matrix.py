@@ -104,10 +104,12 @@ def set_component_grid_size_overrides(
         replace: When ``True``, clear existing overrides before applying a
             mapping update.
 
-    External callers can either update a single component override by passing
-    ``component_or_overrides`` and ``grid_size`` or provide a complete mapping
-    of overrides. When a mapping is supplied and ``replace`` is ``True``, the
-    existing overrides are cleared before applying the new values.
+    Notes:
+        External callers can either update a single component override by
+        passing ``component_or_overrides`` and ``grid_size`` or provide a
+        complete mapping of overrides. When a mapping is supplied and
+        ``replace`` is ``True``, the existing overrides are cleared before
+        applying the new values.
     """
     if isinstance(component_or_overrides, str):
         if grid_size is None:
