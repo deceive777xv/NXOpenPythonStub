@@ -96,7 +96,7 @@ def set_component_grid_size_overrides(
     """Set the manual grid overrides used by ``main()``."""
     COMPONENT_GRID_SIZE_OVERRIDES[component_identifier] = _normalize_grid_size(grid_size)
 
-def _deleteFeature(session: NXOpen.Session, work_part: NXOpen.Part, feature_id):
+def _delete_feature(session: NXOpen.Session, work_part: NXOpen.Part, feature_id):
     markId = session.SetUndoMark(NXOpen.Session.MarkVisibility.Visible, "Delete")
     session.UpdateManager.ClearErrorList()
     objects = [NXOpen.TaggedObject.Null] * 1
@@ -270,7 +270,7 @@ def _body_geometry(
     except:
         bbox_center = centroid
     try:
-        _deleteFeature(session, part, bbox.JournalIdentifier)
+        _delete_feature(session, part, bbox.JournalIdentifier)
     except:
         pass
     bbox_max = (
