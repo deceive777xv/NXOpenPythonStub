@@ -99,15 +99,17 @@ def set_component_grid_size_overrides(
 
     External callers can either update a single component override by passing
     ``component_identifier`` and ``grid_size`` or provide a complete mapping of
-    overrides. When ``replace`` is ``True``, the existing overrides are cleared
-    before applying the new values.
+    overrides. When a mapping is supplied and ``replace`` is ``True``, the
+    existing overrides are cleared before applying the new values.
     """
     if isinstance(component_identifier, str):
         if grid_size is None:
             raise ValueError("grid_size is required when setting a single override.")
 
         if replace:
-            COMPONENT_GRID_SIZE_OVERRIDES.clear()
+            raise ValueError(
+                "replace can only be used when setting overrides from a mapping."
+            )
 
         COMPONENT_GRID_SIZE_OVERRIDES[component_identifier] = _normalize_grid_size(grid_size)
         return
