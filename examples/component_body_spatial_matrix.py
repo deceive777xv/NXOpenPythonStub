@@ -11,7 +11,9 @@ MAX_GRID_AXIS_CELLS = 8
 SAMPLE_MATRIX_FALLBACK_INDEX = 1
 MEASURE_ACCURACY = 0.99
 EPSILON = 1.0e-9
+# GridSize stores the resolved `(x, y, z)` matrix dimensions.
 GridSize = Tuple[int, int, int]
+# GridSizeOverrides maps component identifiers to manual grid-size inputs.
 GridSizeOverrides = Mapping[str, Sequence[int]]
 
 # Manual per-component grid overrides. Keys can be either
@@ -82,13 +84,13 @@ def _resolve_component_grid_size(
     if grid_size is None:
         return None
 
-    return _normalize_grid_size(grid_size)
+    return grid_size
 
-def _deleteFeature(session: NXOpen.Session, workPart: NXOpen.Part, id):
+def _deleteFeature(session: NXOpen.Session, work_part: NXOpen.Part, id):
     markId = session.SetUndoMark(NXOpen.Session.MarkVisibility.Visible, "Delete")
     session.UpdateManager.ClearErrorList()
     objects = [NXOpen.TaggedObject.Null] * 1
-    feature = workPart.Features.FindObject(f"{id}")
+    feature = work_part.Features.FindObject(f"{id}")
     objects[0] = feature
     nErrs1 = session.UpdateManager.AddObjectsToDeleteList(objects)
     id = session.NewestVisibleUndoMark
