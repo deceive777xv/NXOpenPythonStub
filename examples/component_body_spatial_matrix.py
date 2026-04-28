@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, cast
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple, cast
 
 import NXOpen
 import NXOpen.Assemblies
@@ -11,6 +11,14 @@ MAX_GRID_AXIS_CELLS = 8
 SAMPLE_MATRIX_FALLBACK_INDEX = 1
 MEASURE_ACCURACY = 0.99
 EPSILON = 1.0e-9
+# GridSize stores the resolved `(x, y, z)` matrix dimensions.
+GridSize = Tuple[int, int, int]
+# GridSizeOverrides maps component identifiers to manual grid-size inputs.
+GridSizeOverrides = Mapping[str, Sequence[int]]
+
+# Manual per-component grid overrides. Keys can be either
+# component.JournalIdentifier or component.DisplayName.
+COMPONENT_GRID_SIZE_OVERRIDES: GridSizeOverrides = {}
 
 
 @dataclass
@@ -49,15 +57,44 @@ class ComponentBodyAnalysis:
     matrix: SpatialBodyMatrix
     bodies: List[BodyGeometryInfo]
 
-def _deleteFeature(session:NXOpen.Session, workPart:NXOpen.Part, id):
+
+def _normalize_grid_size(grid_size: Sequence[int]) -> GridSize:
+    if len(grid_size) != 3:
+        raise ValueError("grid_size must contain exactly three axis values.")
+
+    normalized = tuple(int(value) for value in grid_size)
+    if any(value <= 0 for value in normalized):
+        raise ValueError("grid_size axis values must be positive integers.")
+
+    return cast(GridSize, normalized)
+
+
+def _resolve_component_grid_size(
+    component: NXOpen.Assemblies.Component,
+    grid_size: Optional[GridSize],
+    grid_size_overrides: Optional[GridSizeOverrides],
+) -> Optional[GridSize]:
+    if grid_size_overrides is not None:
+        override = grid_size_overrides.get(component.JournalIdentifier)
+        if override is None:
+            override = grid_size_overrides.get(component.DisplayName)
+        if override is not None:
+            return _normalize_grid_size(override)
+
+    if grid_size is None:
+        return None
+
+    return grid_size
+
+def _deleteFeature(session: NXOpen.Session, work_part: NXOpen.Part, feature_id):
     markId = session.SetUndoMark(NXOpen.Session.MarkVisibility.Visible, "Delete")
     session.UpdateManager.ClearErrorList()
     objects = [NXOpen.TaggedObject.Null] * 1
-    feature = workPart.Features.FindObject(f"{id}")
+    feature = work_part.Features.FindObject(f"{feature_id}")
     objects[0] = feature
     nErrs1 = session.UpdateManager.AddObjectsToDeleteList(objects)
-    id = session.NewestVisibleUndoMark
-    nErrs2 = session.UpdateManager.DoUpdate(id)
+    update_mark_id = session.NewestVisibleUndoMark
+    nErrs2 = session.UpdateManager.DoUpdate(update_mark_id)
     if markId:
         session.DeleteUndoMark(markId, "Delete Mark")
 
@@ -137,7 +174,7 @@ def _box_builder_init(part: NXOpen.Part):
     matrix.Zy = 0.0
     matrix.Zz = 1.0
     position = NXOpen.Point3d(0.0, 0.0, 0.0)
-    toolingBoxBuilder.setBoxMatrixandPosition(matrix, position)
+    toolingBoxBuilder.SetBoxMatrixAndPosition(matrix, position)
     return toolingBoxBuilder
 
 def _body_bbox(
@@ -208,7 +245,7 @@ def _body_geometry(
     try:
         centroid = _point_to_tuple(mass_properties.Centroid)
         area = mass_properties.Area
-        mass = mass_properties.Mass
+        mass = mass_properties.Volume
     finally:
         mass_properties.Dispose()
 
@@ -218,7 +255,7 @@ def _body_geometry(
         bbox_properties = part.MeasureManager.NewMassProperties(
             _mass_units(part), MEASURE_ACCURACY, [bbox_body]
         )
-        bbox_center = _point_to_tuple(mass_properties.Centroid)
+        bbox_center = _point_to_tuple(bbox_properties.Centroid)
         bbox_properties.Dispose()
     except:
         bbox_center = centroid
@@ -339,7 +376,7 @@ def _auto_grid_size(body_infos: List[BodyGeometryInfo]) -> Tuple[int, int, int]:
 def analyze_component_bodies(
     session: NXOpen.Session,
     component: NXOpen.Assemblies.Component,
-    grid_size: Optional[Tuple[int, int, int]] = None,
+    grid_size: Optional[GridSize] = None,
 ) -> ComponentBodyAnalysis:
     """Analyze one component and build its spatial body matrix.
 
@@ -353,7 +390,7 @@ def analyze_component_bodies(
     prototype_part = _component_prototype_part(component)
     partLoadStatus = session.Parts.SetWorkComponent(component, NXOpen.PartCollection.RefsetOption.Entire,
                                                    NXOpen.PartCollection.WorkComponentOption.Visible)
-    part = session.parts.Work
+    part = session.Parts.Work
     partLoadStatus.Dispose()
     prototype_bodies = prototype_part.Bodies
 
@@ -427,12 +464,15 @@ def analyze_component_bodies(
 
 def build_component_spatial_matrices(
     work_part: NXOpen.Part,
-    grid_size: Optional[Tuple[int, int, int]] = None,
+    grid_size: Optional[GridSize] = None,
+    grid_size_overrides: Optional[GridSizeOverrides] = None,
 ) -> Dict[str, ComponentBodyAnalysis]:
     """Build component analyses keyed by component journal identifier.
 
     When ``grid_size`` is ``None``, each component resolves its own automatic
     grid size from its body data; otherwise the supplied override is applied.
+    ``grid_size_overrides`` can be used to manually set different grid sizes
+    for specific components by journal identifier or display name.
 
     Returns:
         A dictionary keyed by component journal identifier with the
@@ -447,8 +487,11 @@ def build_component_spatial_matrices(
     for component in _walk_components(root_component):
         if component.IsBlanked:
             continue
+        resolved_grid_size = _resolve_component_grid_size(
+            component, grid_size, grid_size_overrides
+        )
         analyses[component.JournalIdentifier] = analyze_component_bodies(
-            session, component, grid_size
+            session, component, resolved_grid_size
         )
 
     return analyses
@@ -483,11 +526,13 @@ def main() -> None:
         )
         return
 
-    analyses = build_component_spatial_matrices(work_part)
+    analyses = build_component_spatial_matrices(
+        work_part, grid_size_overrides=COMPONENT_GRID_SIZE_OVERRIDES
+    )
 
     partLoadStatus = session.Parts.SetWorkComponent(NXOpen.Assemblies.Component.Null, NXOpen.PartCollection.RefsetOption.Entire,
                                                    NXOpen.PartCollection.WorkComponentOption.Visible)
-    part = session.parts.Work
+    part = session.Parts.Work
     partLoadStatus.Dispose()
     
     listing_window.WriteLine(
