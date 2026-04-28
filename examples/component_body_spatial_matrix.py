@@ -90,38 +90,49 @@ def _resolve_component_grid_size(
 
 
 def set_component_grid_size_overrides(
-    component_identifier: Union[str, GridSizeOverrides],
+    component_or_overrides: Union[str, GridSizeOverrides],
     grid_size: Optional[Sequence[int]] = None,
     *,
     replace: bool = False,
 ) -> None:
     """Set the manual grid overrides used by ``main()``.
 
+    Args:
+        component_or_overrides: A single component identifier or a mapping of
+            component identifiers to grid sizes.
+        grid_size: The grid size for a single component override.
+        replace: When ``True``, clear existing overrides before applying a
+            mapping update.
+
     External callers can either update a single component override by passing
-    ``component_identifier`` and ``grid_size`` or provide a complete mapping of
-    overrides. When a mapping is supplied and ``replace`` is ``True``, the
+    ``component_or_overrides`` and ``grid_size`` or provide a complete mapping
+    of overrides. When a mapping is supplied and ``replace`` is ``True``, the
     existing overrides are cleared before applying the new values.
     """
-    if isinstance(component_identifier, str):
+    if isinstance(component_or_overrides, str):
         if grid_size is None:
-            raise ValueError("grid_size is required when setting a single override.")
+            raise ValueError(
+                "grid_size is required when component_or_overrides is a string."
+            )
 
         if replace:
             raise ValueError(
                 "replace can only be used when setting overrides from a mapping."
             )
 
-        COMPONENT_GRID_SIZE_OVERRIDES[component_identifier] = _normalize_grid_size(grid_size)
+        COMPONENT_GRID_SIZE_OVERRIDES[component_or_overrides] = _normalize_grid_size(
+            grid_size
+        )
         return
 
     if grid_size is not None:
         raise ValueError(
-            "grid_size must be omitted when setting overrides from a mapping."
+            "grid_size must be omitted when component_or_overrides is a mapping."
         )
 
     normalized_overrides = {
         identifier: _normalize_grid_size(override)
-        for identifier, override in component_identifier.items()
+        for identifier, override in component_or_overrides.items()
     }
 
     if replace:
