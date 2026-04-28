@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, List, Mapping, Optional, Sequence, Tuple, cast
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple, Union, cast
 
 import NXOpen
 import NXOpen.Assemblies
@@ -15,13 +15,6 @@ EPSILON = 1.0e-9
 GridSize = Tuple[int, int, int]
 # GridSizeOverrides maps component identifiers to manual grid-size inputs.
 GridSizeOverrides = Mapping[str, Sequence[int]]
-
-# Manual per-component grid overrides. Keys can be either
-# component.JournalIdentifier or component.DisplayName. Call
-# ``set_component_grid_size_overrides(component_identifier, grid_size)`` to
-# update these values one component at a time.
-COMPONENT_GRID_SIZE_OVERRIDES: Dict[str, GridSize] = {}
-
 
 @dataclass
 class BodyGeometryInfo:
@@ -90,11 +83,64 @@ def _resolve_component_grid_size(
 
 
 def set_component_grid_size_overrides(
-    component_identifier: str,
-    grid_size: Sequence[int],
-) -> None:
-    """Set the manual grid overrides used by ``main()``."""
-    COMPONENT_GRID_SIZE_OVERRIDES[component_identifier] = _normalize_grid_size(grid_size)
+    component_or_overrides: Union[str, GridSizeOverrides],
+    grid_size: Optional[Sequence[int]] = None,
+    *,
+    overrides: Optional[GridSizeOverrides] = None,
+    replace: bool = False,
+) -> Dict[str, GridSize]:
+    """Return an updated manual grid-override mapping for external callers.
+
+    Args:
+        component_or_overrides: A single component identifier or a mapping of
+            component identifiers to grid-size sequences.
+        grid_size: The grid size for a single component override.
+        overrides: The existing overrides mapping to update.
+        replace: When ``True``, return only the provided mapping update.
+
+    Notes:
+        External callers can either add a single component override to the
+        returned mapping by passing ``component_or_overrides`` and
+        ``grid_size`` or provide a complete mapping of overrides. The
+        function always returns a new normalized dictionary and never mutates
+        module-level state.
+    """
+    normalized_existing: Dict[str, GridSize] = {}
+    if overrides is not None:
+        normalized_existing = {
+            identifier: _normalize_grid_size(override)
+            for identifier, override in overrides.items()
+        }
+
+    if isinstance(component_or_overrides, str):
+        if grid_size is None:
+            raise ValueError(
+                "grid_size is required when component_or_overrides is a string."
+            )
+
+        if replace:
+            raise ValueError(
+                "replace can only be True when component_or_overrides is a GridSizeOverrides mapping, not a string component identifier."
+            )
+
+        normalized_existing[component_or_overrides] = _normalize_grid_size(grid_size)
+        return normalized_existing
+
+    if grid_size is not None:
+        raise ValueError(
+            "grid_size must be omitted when component_or_overrides is a mapping."
+        )
+
+    normalized_overrides = {
+        identifier: _normalize_grid_size(override)
+        for identifier, override in component_or_overrides.items()
+    }
+
+    if replace:
+        return normalized_overrides
+
+    normalized_existing.update(normalized_overrides)
+    return normalized_existing
 
 def _delete_feature(session: NXOpen.Session, work_part: NXOpen.Part, feature_id):
     markId = session.SetUndoMark(NXOpen.Session.MarkVisibility.Visible, "Delete")
@@ -536,9 +582,7 @@ def main() -> None:
         )
         return
 
-    analyses = build_component_spatial_matrices(
-        work_part, grid_size_overrides=COMPONENT_GRID_SIZE_OVERRIDES
-    )
+    analyses = build_component_spatial_matrices(work_part)
 
     partLoadStatus = session.Parts.SetWorkComponent(NXOpen.Assemblies.Component.Null, NXOpen.PartCollection.RefsetOption.Entire,
                                                    NXOpen.PartCollection.WorkComponentOption.Visible)
