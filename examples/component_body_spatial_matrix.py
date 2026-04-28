@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, List, Mapping, Optional, Sequence, Tuple, cast
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple, Union, cast
 
 import NXOpen
 import NXOpen.Assemblies
@@ -18,8 +18,8 @@ GridSizeOverrides = Mapping[str, Sequence[int]]
 
 # Manual per-component grid overrides. Keys can be either
 # component.JournalIdentifier or component.DisplayName. Call
-# ``set_component_grid_size_overrides(component_identifier, grid_size)`` to
-# update these values one component at a time.
+# ``set_component_grid_size_overrides(...)`` to update these values from an
+# external script before running ``main()``.
 COMPONENT_GRID_SIZE_OVERRIDES: Dict[str, GridSize] = {}
 
 
@@ -90,11 +90,42 @@ def _resolve_component_grid_size(
 
 
 def set_component_grid_size_overrides(
-    component_identifier: str,
-    grid_size: Sequence[int],
+    component_identifier: Union[str, GridSizeOverrides],
+    grid_size: Optional[Sequence[int]] = None,
+    *,
+    replace: bool = False,
 ) -> None:
-    """Set the manual grid overrides used by ``main()``."""
-    COMPONENT_GRID_SIZE_OVERRIDES[component_identifier] = _normalize_grid_size(grid_size)
+    """Set the manual grid overrides used by ``main()``.
+
+    External callers can either update a single component override by passing
+    ``component_identifier`` and ``grid_size`` or provide a complete mapping of
+    overrides. When ``replace`` is ``True``, the existing overrides are cleared
+    before applying the new values.
+    """
+    if isinstance(component_identifier, str):
+        if grid_size is None:
+            raise ValueError("grid_size is required when setting a single override.")
+
+        if replace:
+            COMPONENT_GRID_SIZE_OVERRIDES.clear()
+
+        COMPONENT_GRID_SIZE_OVERRIDES[component_identifier] = _normalize_grid_size(grid_size)
+        return
+
+    if grid_size is not None:
+        raise ValueError(
+            "grid_size must be omitted when setting overrides from a mapping."
+        )
+
+    normalized_overrides = {
+        identifier: _normalize_grid_size(override)
+        for identifier, override in component_identifier.items()
+    }
+
+    if replace:
+        COMPONENT_GRID_SIZE_OVERRIDES.clear()
+
+    COMPONENT_GRID_SIZE_OVERRIDES.update(normalized_overrides)
 
 def _delete_feature(session: NXOpen.Session, work_part: NXOpen.Part, feature_id):
     markId = session.SetUndoMark(NXOpen.Session.MarkVisibility.Visible, "Delete")
