@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple, Union, cast
-
+import math
 import NXOpen
 import NXOpen.Assemblies
 import NXOpen.Features
@@ -371,13 +371,40 @@ def _component_bbox(
         ),
     )
 
+def _percentile(values: Sequence[float], q: float) -> float:
+    """Return the interpolated percentile for a non-empty numeric sequence."""
+    if not values:
+        raise ValueError("values must not be empty")
 
+    sorted_values = sorted(float(value) for value in values)
+    if len(sorted_values) == 1:
+        return sorted_values[0]
+
+    position = (len(sorted_values) - 1) * q
+    lower_index = int(math.floor(position))
+    upper_index = int(math.ceil(position))
+
+    if lower_index == upper_index:
+        return sorted_values[lower_index]
+
+    fraction = position - lower_index
+    return (
+        sorted_values[lower_index] * (1.0 - fraction)
+        + sorted_values[upper_index] * fraction
+    )
+    
 def _auto_grid_size(body_infos: List[BodyGeometryInfo]) -> Tuple[int, int, int]:
-    """Estimate a grid from body count and overall component span.
+    """Estimate a grid from body count, overall span, and typical body size.
 
-    The component bbox is derived from the body bboxes, normalized by the
-    dominant span, then scaled so the resulting grid roughly tracks the number
-    of bodies while respecting flat or degenerate geometry.
+    The grid uses two complementary signals:
+
+    1. Count-based scaling:
+       Preserves the previous behavior of distributing cells according to the
+       component bbox aspect ratio and the total number of bodies.
+
+    2. Size-based scaling:
+       Prevents cells from becoming too large relative to the smaller bodies in
+       the model by using a lower-percentile body size as a target resolution.
 
     Returns:
         A tuple of ``(x, y, z)`` grid dimensions. Empty input falls back to
@@ -392,12 +419,17 @@ def _auto_grid_size(body_infos: List[BodyGeometryInfo]) -> Tuple[int, int, int]:
         max(component_bbox_max[index] - component_bbox_min[index], 0.0)
         for index in range(3)
     )
+
     active_axes = [index for index, span in enumerate(spans) if span >= EPSILON]
     if not active_axes:
         return (1, 1, 1)
 
     body_count = len(body_infos)
     axis_cap = max(1, min(MAX_GRID_AXIS_CELLS, body_count))
+
+    # ------------------------------------------------------------------
+    # 1) Count-based estimate: keep the original behavior as the baseline.
+    # ------------------------------------------------------------------
     max_span = max(spans[index] for index in active_axes)
     normalized_spans = [1.0, 1.0, 1.0]
     active_product = 1.0
@@ -405,23 +437,69 @@ def _auto_grid_size(body_infos: List[BodyGeometryInfo]) -> Tuple[int, int, int]:
         normalized_spans[index] = spans[index] / max_span
         active_product *= normalized_spans[index]
 
-    # active_axes is bounded by the three model-space axes.
     active_axis_count = len(active_axes)
     max_cell_count = axis_cap ** active_axis_count
     target_cell_count = min(body_count, max_cell_count)
     effective_active_product = max(active_product, EPSILON)
-    # active_axis_count is guaranteed to be non-zero because empty active_axes
-    # returns earlier. Very small products are clamped to EPSILON so
-    # flat-but-active geometry still produces a finite nth-root scale.
-    nth_root_exponent = 1.0 / active_axis_count
-    scale = (float(target_cell_count) / effective_active_product) ** nth_root_exponent
+    scale = (
+        float(target_cell_count) / effective_active_product
+    ) ** (1.0 / active_axis_count)
 
-    axis_counts = [1, 1, 1]
+    count_based_axis_counts = [1, 1, 1]
     for index in active_axes:
-        axis_counts[index] = max(
+        count_based_axis_counts[index] = max(
             1, min(axis_cap, int(normalized_spans[index] * scale))
         )
 
+    # ------------------------------------------------------------------
+    # 2) Size-based estimate: keep cells reasonably close to small bodies.
+    # ------------------------------------------------------------------
+    # Use a lower percentile rather than min() so a single tiny sliver body
+    # does not force the whole grid to become excessively fine.
+    size_percentile = 0.25
+
+    # Larger factor => coarser grid. Smaller factor => finer grid.
+    # 2.0 is a reasonable first-pass compromise.
+    cell_size_factor = 2.0
+
+    size_based_axis_counts = [1, 1, 1]
+    for index in active_axes:
+        axis_body_sizes = [
+            max(info.bbox_size[index], 0.0)
+            for info in body_infos
+            if info.bbox_size[index] >= EPSILON
+        ]
+
+        if not axis_body_sizes:
+            size_based_axis_counts[index] = 1
+            continue
+
+        typical_small_body_size = max(
+            _percentile(axis_body_sizes, size_percentile),
+            EPSILON,
+        )
+        target_cell_size = typical_small_body_size * cell_size_factor
+
+        size_based_axis_counts[index] = max(
+            1,
+            min(
+                axis_cap,
+                int(math.ceil(spans[index] / target_cell_size)),
+            ),
+        )
+
+    # ------------------------------------------------------------------
+    # 3) Merge both signals.
+    # ------------------------------------------------------------------
+    axis_counts = [1, 1, 1]
+    for index in active_axes:
+        axis_counts[index] = max(
+            count_based_axis_counts[index],
+            size_based_axis_counts[index],
+        )
+
+    # If we still collapse to 1x1x1 on active axes despite multiple bodies,
+    # force at least a minimal split on the dominant axis.
     if body_count > 1 and all(axis_counts[index] == 1 for index in active_axes):
         dominant_axis = max(active_axes, key=lambda index: spans[index])
         axis_counts[dominant_axis] = min(axis_cap, 2)
