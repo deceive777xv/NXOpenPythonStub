@@ -30,11 +30,20 @@ class BodyGeometryInfo:
     bbox_size: Tuple[float, float, float]
     matrix_range_min: Tuple[int, int, int]
     matrix_range_max: Tuple[int, int, int]
+    center: Tuple[int, int, int]
 
 
 @dataclass
 class SpatialBodyMatrix:
     shape: Tuple[int, int, int]
+    cells: List[List[List[List[BodyGeometryInfo]]]]
+
+    def __getitem__(self, index: Tuple[int, int, int]) -> List[BodyGeometryInfo]:
+        ix, iy, iz = index
+        return self.cells[ix][iy][iz]
+
+@dataclass
+class SpatialBodyMatrixCenter:
     cells: List[List[List[List[BodyGeometryInfo]]]]
 
     def __getitem__(self, index: Tuple[int, int, int]) -> List[BodyGeometryInfo]:
@@ -51,6 +60,7 @@ class ComponentBodyAnalysis:
     component_bbox_max: Tuple[float, float, float]
     matrix: SpatialBodyMatrix
     bodies: List[BodyGeometryInfo]
+    matrix_center: SpatialBodyMatrixCenter
 
 
 def _normalize_grid_size(grid_size: Sequence[int]) -> GridSize:
@@ -343,6 +353,7 @@ def _body_geometry(
         bbox_size=bbox_size,
         matrix_range_min=(0, 0, 0),
         matrix_range_max=(0, 0, 0),
+        center=(0, 0, 0),
     )
 
 
@@ -554,6 +565,7 @@ def analyze_component_bodies(
     resolved_grid_size = grid_size or _auto_grid_size(body_infos)
 
     matrix_cells = _empty_matrix(resolved_grid_size)
+    matrix_center = _empty_matrix(resolved_grid_size)
     for info in body_infos:
         x_range = _axis_cell_range(
             info.bbox_min[0],
@@ -576,6 +588,27 @@ def analyze_component_bodies(
             component_bbox_max[2],
             resolved_grid_size[2],
         )
+        x_center = _axis_cell_range(
+            info.bbox_center[0],
+            info.bbox_center[0],
+            component_bbox_min[0],
+            component_bbox_max[0],
+            resolved_grid_size[0],
+        )
+        y_center = _axis_cell_range(
+            info.bbox_center[1],
+            info.bbox_center[1],
+            component_bbox_min[1],
+            component_bbox_max[1],
+            resolved_grid_size[1],
+        )
+        z_center = _axis_cell_range(
+            info.bbox_center[2],
+            info.bbox_center[2],
+            component_bbox_min[2],
+            component_bbox_max[2],
+            resolved_grid_size[2],
+        )
 
         info.matrix_range_min = (x_range[0], y_range[0], z_range[0])
         info.matrix_range_max = (x_range[1], y_range[1], z_range[1])
@@ -584,6 +617,8 @@ def analyze_component_bodies(
             for iy in range(y_range[0], y_range[1] + 1):
                 for iz in range(z_range[0], z_range[1] + 1):
                     matrix_cells[ix][iy][iz].append(info)
+        info.center = (x_center[0], y_center[0], z_center[0])
+        matrix_center[x_center[0]][y_center[0]][z_center[0]].append(info)
 
     return ComponentBodyAnalysis(
         component_name=component.DisplayName,
@@ -593,6 +628,7 @@ def analyze_component_bodies(
         component_bbox_max=component_bbox_max,
         matrix=SpatialBodyMatrix(resolved_grid_size, matrix_cells),
         bodies=body_infos,
+        matrix_center=SpatialBodyMatrixCenter(matrix_center)
     )
 
 
@@ -698,11 +734,12 @@ def main() -> None:
                 )
             )
             listing_window.WriteLine(
-                "    BBox center={0} | size={1} | matrix-range={2} -> {3}".format(
+                "    BBox center={0} | size={1} | matrix-range={2} -> {3} | matrix-center={4}".format(
                     _format_vector(body_info.bbox_center),
                     _format_vector(body_info.bbox_size),
                     body_info.matrix_range_min,
                     body_info.matrix_range_max,
+                    body_info.center,
                 )
             )
 
